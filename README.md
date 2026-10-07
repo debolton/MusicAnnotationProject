@@ -3,7 +3,7 @@ title: Music Annotation Project
 emoji: 🎶🎺🪊
 colorFrom: {{colorFrom}}
 colorTo: {{colorTo}}
-sdk: Gradio
+sdk: gradio
 sdk_version: "{{sdkVersion}}"
 {{#pythonVersion}}
 python_version: "{{pythonVersion}}"
