@@ -2,9 +2,9 @@
   "project": {
     "title": "Music Annotation Control Centre",
     "version": "1.0",
-    "github_repository": "https://github.com/YOUR-ACCOUNT/YOUR-REPOSITORY",
+    "github_repository": "https://github.com/debolton/MusicAnnotationProject",
     "github_branch": "main",
-    "huggingface_space": "https://huggingface.co/spaces/YOUR-ACCOUNT/YOUR-SPACE",
+    "huggingface_space": "https://huggingface.co/spaces/debolton/MusicAnnotationProject",
     "reviewer_url": ""
   },
   "notebooks": [
