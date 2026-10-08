@@ -1,0 +1,8 @@
+MusicAnnotationProject_V3.1_00_Incremental_Align_and_AutoMasks.txt -> 01_Incremental_Align_and_AutoMasks.ipynb (8 cells)
+MusicAnnotationProject_V3_01_Incremental_Build_Dataset_v3.txt -> 02_Incremental_Build_Dataset.ipynb (12 cells)
+MusicAnnotationProject_V3_02_GPU_Local_Staging_Train_Evaluate_GST.txt -> 03_GPU_Train_Evaluate_GST.ipynb (17 cells)
+MusicAnnotationProject_v3_03_GST_Normalisation_and_Model_Comparison.txt -> 04_GST_Normalisation_Comparison.ipynb (15 cells)
+MusicAnnotationProject_v3_04_Training_Tile_Dataset_Forensics.txt -> 05_Training_Tile_Forensics.ipynb (20 cells)
+MusicAnnotationProject_V3_HITM_A_GPU_Confidence_Generator_v3.txt -> 06_HITL_GPU_Confidence_Generator.ipynb (5 cells)
+MusicAnnotationProject_V3_HITM_B_CPU_Event_Bridge_Reviewer_v11.txt -> 07_HITL_CPU_Reviewer.ipynb (10 cells)
+MusicAnnotationProject_V3_Model_Evaluation_Suite.txt -> 08_Model_Evaluation_Suite.ipynb (19 cells)

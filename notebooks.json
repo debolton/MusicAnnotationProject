@@ -1,0 +1,180 @@
+{
+  "project": {
+    "title": "Music Annotation Control Centre",
+    "version": "1.0",
+    "github_repository": "https://github.com/YOUR-ACCOUNT/YOUR-REPOSITORY",
+    "github_branch": "main",
+    "huggingface_space": "https://huggingface.co/spaces/YOUR-ACCOUNT/YOUR-SPACE",
+    "reviewer_url": ""
+  },
+  "notebooks": [
+    {
+      "id": "prepare",
+      "stage": "01",
+      "title": "Prepare Existing Pages",
+      "file": "notebooks/01_Incremental_Align_and_AutoMasks.ipynb",
+      "runtime": "CPU",
+      "category": "workflow",
+      "modifies_data": true,
+      "description": "Align clean and annotated source pages and generate automatic masks. Unchanged pages are skipped.",
+      "requires": [
+        "Matching clean and annotated source pages",
+        "project_config.json",
+        "Google Drive access"
+      ],
+      "produces": [
+        "Aligned pages",
+        "Automatic masks",
+        "Registration and mask previews",
+        "Incremental alignment state"
+      ]
+    },
+    {
+      "id": "hitl-generate",
+      "stage": "02A",
+      "title": "Generate HITL Drafts",
+      "file": "notebooks/06_HITL_GPU_Confidence_Generator.ipynb",
+      "runtime": "GPU",
+      "category": "workflow",
+      "modifies_data": true,
+      "description": "Generate binary draft masks and pixel confidence maps for unreviewed source pages.",
+      "requires": [
+        "GPU runtime",
+        "Trained best.pt checkpoint",
+        "Images in source/annotated_only"
+      ],
+      "produces": [
+        "Draft masks",
+        "Confidence maps",
+        "Draft audit records"
+      ]
+    },
+    {
+      "id": "hitl-review",
+      "stage": "02B",
+      "title": "Review Draft Masks",
+      "file": "notebooks/07_HITL_CPU_Reviewer.ipynb",
+      "runtime": "CPU",
+      "category": "workflow",
+      "modifies_data": true,
+      "description": "Correct draft predictions using the browser-side Gradio canvas reviewer.",
+      "requires": [
+        "Draft masks and confidence maps",
+        "Google Drive access"
+      ],
+      "produces": [
+        "Corrected masks",
+        "Aligned pages",
+        "Review previews",
+        "Audit records"
+      ]
+    },
+    {
+      "id": "build",
+      "stage": "03",
+      "title": "Build Training Dataset",
+      "file": "notebooks/02_Incremental_Build_Dataset.ipynb",
+      "runtime": "CPU",
+      "category": "workflow",
+      "modifies_data": true,
+      "description": "Build incremental training and validation tiles, labels, YAML and manifest files.",
+      "requires": [
+        "Aligned images",
+        "Corrected masks",
+        "project_config.json"
+      ],
+      "produces": [
+        "Training and validation tiles",
+        "YOLO labels",
+        "dataset_v3.yaml",
+        "dataset_manifest_v3.json",
+        "Persistent HITL split assignments"
+      ]
+    },
+    {
+      "id": "train",
+      "stage": "04",
+      "title": "Train Model",
+      "file": "notebooks/03_GPU_Train_Evaluate_GST.ipynb",
+      "runtime": "GPU",
+      "category": "workflow",
+      "modifies_data": true,
+      "description": "Run the safety gate, stage data locally, train the YOLO segmentation model and save diagnostics.",
+      "requires": [
+        "GPU runtime",
+        "dataset_v3.yaml",
+        "dataset_manifest_v3.json",
+        "Paired images and labels"
+      ],
+      "produces": [
+        "Training run",
+        "Model weights",
+        "Validation predictions",
+        "GST diagnostics"
+      ]
+    },
+    {
+      "id": "evaluate",
+      "stage": "05",
+      "title": "Evaluate Models",
+      "file": "notebooks/08_Model_Evaluation_Suite.ipynb",
+      "runtime": "GPU",
+      "category": "workflow",
+      "modifies_data": false,
+      "description": "Compare checkpoints on gold-standard and hard-negative pages without retraining.",
+      "requires": [
+        "One or more checkpoints",
+        "Gold-standard pages",
+        "Hard-negative pages",
+        "GPU runtime"
+      ],
+      "produces": [
+        "Threshold sweeps",
+        "False-positive leaderboard",
+        "Model comparison",
+        "Evaluation summary"
+      ]
+    },
+    {
+      "id": "normalisation",
+      "stage": "A",
+      "title": "Test Page Normalisation",
+      "file": "notebooks/04_GST_Normalisation_Comparison.ipynb",
+      "runtime": "GPU",
+      "category": "analysis",
+      "modifies_data": false,
+      "description": "Compare original, background-normalised and CLAHE-enhanced inputs with the same model.",
+      "requires": [
+        "Trained model",
+        "Gold-standard pages",
+        "GPU runtime"
+      ],
+      "produces": [
+        "Normalised images",
+        "Predictions",
+        "Comparison images",
+        "CSV and JSON summaries"
+      ]
+    },
+    {
+      "id": "forensics",
+      "stage": "B",
+      "title": "Run Dataset Forensics",
+      "file": "notebooks/05_Training_Tile_Forensics.ipynb",
+      "runtime": "CPU",
+      "category": "analysis",
+      "modifies_data": false,
+      "description": "Perform read-only analysis of tile pairing, coverage, fragmentation and label quality.",
+      "requires": [
+        "Built dataset",
+        "Training masks"
+      ],
+      "produces": [
+        "Tables",
+        "Charts",
+        "Contact sheets",
+        "Conservative recommendations"
+      ]
+    }
+  ]
+}

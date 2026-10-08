@@ -1,6 +1,1 @@
-gradio
-ultralytics
-opencv-python-headless
-pillow
-numpy
-pandas
+gradio>=6,<7
