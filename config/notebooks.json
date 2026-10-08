@@ -3,8 +3,8 @@
     "title": "Music Annotation Control Centre",
     "version": "1.0",
     "subtitle": "Prepare \u2192 Review \u2192 Build \u2192 Train \u2192 Evaluate",
-    "github_owner": "YOUR-GITHUB-USERNAME",
-    "github_repository": "YOUR-REPOSITORY",
+    "github_owner": "debolton",
+    "github_repository": "MusicAnnotationProject",
     "github_branch": "main"
   },
   "notebooks": [
