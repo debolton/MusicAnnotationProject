@@ -2,10 +2,10 @@
   "project": {
     "title": "Music Annotation Control Centre",
     "version": "1.0",
-    "github_repository": "https://github.com/debolton/MusicAnnotationProject",
-    "github_branch": "main",
-    "huggingface_space": "https://huggingface.co/spaces/debolton/MusicAnnotationProject",
-    "reviewer_url": ""
+    "subtitle": "Prepare \u2192 Review \u2192 Build \u2192 Train \u2192 Evaluate",
+    "github_owner": "YOUR-GITHUB-USERNAME",
+    "github_repository": "YOUR-REPOSITORY",
+    "github_branch": "main"
   },
   "notebooks": [
     {
@@ -57,7 +57,7 @@
       "runtime": "CPU",
       "category": "workflow",
       "modifies_data": true,
-      "description": "Correct draft predictions using the browser-side Gradio canvas reviewer.",
+      "description": "Correct draft predictions using the browser-side Gradio canvas reviewer launched from Colab.",
       "requires": [
         "Draft masks and confidence maps",
         "Google Drive access"
@@ -99,7 +99,7 @@
       "runtime": "GPU",
       "category": "workflow",
       "modifies_data": true,
-      "description": "Run the safety gate, stage data locally, train the YOLO segmentation model and save diagnostics.",
+      "description": "Run safety checks, stage data locally, train the segmentation model and save diagnostics.",
       "requires": [
         "GPU runtime",
         "dataset_v3.yaml",
