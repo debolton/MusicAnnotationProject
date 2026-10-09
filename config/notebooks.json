@@ -1,8 +1,8 @@
 {
   "project": {
     "title": "Music Annotation Control Centre",
-    "version": "1.0",
-    "subtitle": "Prepare \u2192 Review \u2192 Build \u2192 Train \u2192 Evaluate",
+    "version": "1.1",
+    "subtitle": "Prepare → Review → Build → Train → Evaluate → Reconstruct → Benchmark",
     "github_owner": "debolton",
     "github_repository": "MusicAnnotationProject",
     "github_branch": "main"
@@ -133,6 +133,49 @@
         "False-positive leaderboard",
         "Model comparison",
         "Evaluation summary"
+      ]
+    },
+    {
+      "id": "reconstruct",
+      "stage": "06",
+      "title": "Remove Annotations and Reconstruct Music",
+      "file": "notebooks/09_Notation_Aware_Annotation_Removal.ipynb",
+      "runtime": "GPU",
+      "category": "workflow",
+      "modifies_data": true,
+      "description": "Detect annotations and reconstruct obscured staff lines, notes and symbols using notation-aware structural repair.",
+      "requires": [
+        "GPU runtime",
+        "Trained best.pt checkpoint",
+        "Images in source/annotated_only"
+      ],
+      "produces": [
+        "Conservative cleaned pages",
+        "Aggressive cleaned pages",
+        "Annotation masks",
+        "Uncertainty maps",
+        "Reconstruction review panels",
+        "Audit records"
+      ]
+    },
+    {
+      "id": "reconstruction-benchmark",
+      "stage": "07",
+      "title": "Benchmark Reconstruction Quality",
+      "file": "notebooks/10_Reconstruction_Benchmark.ipynb",
+      "runtime": "CPU",
+      "category": "workflow",
+      "modifies_data": false,
+      "description": "Compare reconstructed notation with clean ground truth using pixel, edge and staff-continuity measures.",
+      "requires": [
+        "Clean source pages",
+        "Corrected annotation masks",
+        "Reconstruction outputs"
+      ],
+      "produces": [
+        "Reconstruction metrics",
+        "Method summary",
+        "Failure-focused comparison sheets"
       ]
     },
     {
