@@ -11,12 +11,12 @@
     {
       "id": "prepare",
       "stage": "01",
-      "title": "Prepare Existing Pages",
+      "title": "Prepare Clean/Annotated Pages",
       "file": "notebooks/01_Incremental_Align_and_AutoMasks.ipynb",
       "runtime": "CPU",
       "category": "workflow",
       "modifies_data": true,
-      "description": "Align clean and annotated source pages and generate automatic masks. Unchanged pages are skipped.",
+      "description": "Align clean and annotated source pages and generate automatic masks. Unchanged pages are skipped.  This forms the start of the training for YOLO. Automatic masks will need to be reviewed and corrected.",
       "requires": [
         "Matching clean and annotated source pages",
         "project_config.json",
@@ -37,7 +37,7 @@
       "runtime": "GPU",
       "category": "workflow",
       "modifies_data": true,
-      "description": "Generate binary draft masks and pixel confidence maps for unreviewed source pages.",
+      "description": "Generate binary draft masks and pixel confidence maps for unreviewed source pages.  Clean music not required.  Requires first model to be trained using Workflow 01 above.",
       "requires": [
         "GPU runtime",
         "Trained best.pt checkpoint",
@@ -57,7 +57,7 @@
       "runtime": "CPU",
       "category": "workflow",
       "modifies_data": true,
-      "description": "Correct draft predictions using the browser-side Gradio canvas reviewer launched from Colab.",
+      "description": "Correct draft predictions generated in Workflow 02A using the browser-side Gradio canvas reviewer launched from Colab.",
       "requires": [
         "Draft masks and confidence maps",
         "Google Drive access"
@@ -156,26 +156,6 @@
         "Uncertainty maps",
         "Reconstruction review panels",
         "Audit records"
-      ]
-    },
-    {
-      "id": "reconstruction-benchmark",
-      "stage": "07",
-      "title": "Benchmark Reconstruction Quality",
-      "file": "notebooks/10_Reconstruction_Benchmark.ipynb",
-      "runtime": "CPU",
-      "category": "workflow",
-      "modifies_data": false,
-      "description": "Compare reconstructed notation with clean ground truth using pixel, edge and staff-continuity measures.",
-      "requires": [
-        "Clean source pages",
-        "Corrected annotation masks",
-        "Reconstruction outputs"
-      ],
-      "produces": [
-        "Reconstruction metrics",
-        "Method summary",
-        "Failure-focused comparison sheets"
       ]
     },
     {
