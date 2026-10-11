@@ -157,47 +157,6 @@
         "Reconstruction review panels",
         "Audit records"
       ]
-    },
-    {
-      "id": "normalisation",
-      "stage": "A",
-      "title": "Test Page Normalisation",
-      "file": "notebooks/04_GST_Normalisation_Comparison.ipynb",
-      "runtime": "GPU",
-      "category": "analysis",
-      "modifies_data": false,
-      "description": "Compare original, background-normalised and CLAHE-enhanced inputs with the same model.",
-      "requires": [
-        "Trained model",
-        "Gold-standard pages",
-        "GPU runtime"
-      ],
-      "produces": [
-        "Normalised images",
-        "Predictions",
-        "Comparison images",
-        "CSV and JSON summaries"
-      ]
-    },
-    {
-      "id": "forensics",
-      "stage": "B",
-      "title": "Run Dataset Forensics",
-      "file": "notebooks/05_Training_Tile_Forensics.ipynb",
-      "runtime": "CPU",
-      "category": "analysis",
-      "modifies_data": false,
-      "description": "Perform read-only analysis of tile pairing, coverage, fragmentation and label quality.",
-      "requires": [
-        "Built dataset",
-        "Training masks"
-      ],
-      "produces": [
-        "Tables",
-        "Charts",
-        "Contact sheets",
-        "Conservative recommendations"
-      ]
     }
   ]
 }
