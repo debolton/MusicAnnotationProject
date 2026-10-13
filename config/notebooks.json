@@ -169,8 +169,8 @@
       "description": "Presents a dashboard to the user to propose a reconstruction after detection of annotations.  User is able to accept, reject or amend reconstruction.",
       "requires": [
         "HITL completion",
-        "Use Notebook 06 and 07 on a GPU first for new pages",
-        "Annotated images in production_pilot/incoming"
+        "Use Workflows 02A and 02B first for new pages",
+        "Annotated images in production_pilot/incoming (manual transfer)"
       ],
       "produces": [
         "Gradio reviewer",
