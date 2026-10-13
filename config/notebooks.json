@@ -157,6 +157,27 @@
         "Reconstruction review panels",
         "Audit records"
       ]
+    },
+        {
+      "id": "reconstruct",
+      "stage": "07",
+      "title": "Moving Towards Production Version to Remove Annotations and Reconstruct Music",
+      "file": "notebooks/09_Pilot_Compact_Diagnostic_State_Preserving_Reviewer.ipynb",
+      "runtime": "CPU",
+      "category": "workflow",
+      "modifies_data": true,
+      "description": "Presents a dashboard to the user to propose a reconstruction after detection of annotations.  User is able to accept, reject or amend reconstruction.",
+      "requires": [
+        "HITL completion",
+        "Use Notebook 06 and 07 on a GPU first for new pages",
+        "Annotated images in production_pilot/incoming"
+      ],
+      "produces": [
+        "Gradio reviewer",
+        "Cleaned pages",
+        "Reconstruction review panels",
+        "Audit records"
+      ]
     }
   ]
 }
