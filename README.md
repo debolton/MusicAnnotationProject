@@ -1,6 +1,6 @@
 ---
 title: Music Annotation Control Centre
-emoji: 🎼
+emoji: 🎼🎺🎶
 colorFrom: blue
 colorTo: indigo
 sdk: gradio
