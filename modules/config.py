@@ -52,3 +52,44 @@ class ProjectConfig:
             self.state_dir /
             "hitl_split_assignments.json"
         )
+
+        # additional paths
+
+        self.hitl_dir = (
+            self.root /
+            "human_in_the_middle"
+        )
+
+        self.draft_mask_dir = (
+            self.hitl_dir /
+            "draft_masks"
+        )
+
+        self.confidence_dir = (
+            self.hitl_dir /
+            "confidence_maps"
+        )
+
+        self.draft_audit_dir = (
+            self.hitl_dir /
+            "draft_audit"
+        )
+
+        self.review_audit_dir = (
+            self.hitl_dir /
+            "audit"
+        )
+
+        self.source_dir = (
+            self.root /
+            "source" /
+            "annotated_only"
+        )
+
+        self.model_path = (
+            self.root /
+            "training_runs" /
+            "latest" /
+            "weights" /
+            "best.pt"
+        )
