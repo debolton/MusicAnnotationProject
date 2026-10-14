@@ -59,5 +59,18 @@ with gr.Tab("Generate Drafts"):
         outputs=output
     )
 
+with gr.Tab("Review Drafts"):
+
+    source_choice = gr.Dropdown(...)
+
+    canvas = gr.HTML(
+        Path(
+            "ui/canvas.html"
+        ).read_text(),
+        js_on_load=Path(
+            "ui/canvas.js"
+        ).read_text()
+    )
+
 
 app.launch()
