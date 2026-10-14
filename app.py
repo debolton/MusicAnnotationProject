@@ -1,59 +1,34 @@
 import gradio as gr
 
-def detect(image):
-    # Replace with YOLO inference
-    return image
+from modules.dataset_builder import (
+    DatasetBuilder
+)
 
-def save_annotations():
-    return "Annotations saved"
 
-def train_model():
-    return "Training started"
+def rebuild_dataset():
 
-with gr.Blocks(title="Sheet Music AI") as app:
+    builder = DatasetBuilder(
+        "project_config.json"
+    )
 
-    gr.Markdown("# 🎼 Sheet Music Handwriting Detection")
+    return builder.build_dataset()
 
-    with gr.Tab("Detect"):
 
-        image_input = gr.Image(type="filepath")
+with gr.Blocks() as app:
 
-        detect_btn = gr.Button("Run Detection")
+    gr.Markdown(
+        "# Sheet Music AI"
+    )
 
-        image_output = gr.Image()
+    btn = gr.Button(
+        "Build Dataset"
+    )
 
-        detect_btn.click(
-            fn=detect,
-            inputs=image_input,
-            outputs=image_output
-        )
+    output = gr.Textbox()
 
-    with gr.Tab("Review"):
-
-        gr.Markdown(
-            "Correct bounding boxes and add missing annotations"
-        )
-
-        review_image = gr.Image()
-
-        save_btn = gr.Button("Save Labels")
-
-        save_status = gr.Textbox()
-
-        save_btn.click(
-            fn=save_annotations,
-            outputs=save_status
-        )
-
-    with gr.Tab("Train"):
-
-        train_btn = gr.Button("Train New Model")
-
-        train_output = gr.Textbox()
-
-        train_btn.click(
-            fn=train_model,
-            outputs=train_output
-        )
+    btn.click(
+        rebuild_dataset,
+        outputs=output
+    )
 
 app.launch()
