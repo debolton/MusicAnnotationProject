@@ -1,107 +1,86 @@
 # app.py
 
 import json
-from pathlib import Path
+import traceback
 
 import gradio as gr
 
 from modules.hitl_generator import HITLDraftGenerator
 from modules.dataset_builder import DatasetBuilder
 from modules.trainer import ModelTrainer
+from modules.pilot.pilot_reviewer import PilotReviewer
 
 
-CONFIG_FILE = "project_config.json"
+CONFIG_PATH = "project_config.json"
 
 
-# =====================================================
-# Draft Generation
-# =====================================================
+# ==================================================
+# Helpers
+# ==================================================
+
+def safe_call(fn):
+
+    try:
+
+        return fn()
+
+    except Exception as e:
+
+        traceback.print_exc()
+
+        return (
+            "ERROR\n\n"
+            f"{type(e).__name__}\n\n"
+            f"{str(e)}"
+        )
+
+
+# ==================================================
+# Draft generation
+# ==================================================
 
 def generate_drafts():
 
-    try:
+    def _run():
 
-        generator = HITLDraftGenerator(
-            CONFIG_FILE
+        generator = (
+            HITLDraftGenerator(
+                CONFIG_PATH
+            )
         )
 
-        result = generator.generate()
+        return generator.generate()
 
-        return result
-
-    except Exception as ex:
-
-        return f"ERROR\n\n{ex}"
+    return safe_call(_run)
 
 
-# =====================================================
-# Dataset Builder
-# =====================================================
+# ==================================================
+# Dataset build
+# ==================================================
 
 def build_dataset():
 
-    try:
+    def _run():
 
         builder = DatasetBuilder(
-            CONFIG_FILE
+            CONFIG_PATH
         )
 
-        result = builder.build_dataset()
+        return builder.build_dataset()
 
-        return result
-
-    except Exception as ex:
-
-        return f"ERROR\n\n{ex}"
+    return safe_call(_run)
 
 
-# =====================================================
-# Training
-# =====================================================
+# ==================================================
+# Validation
+# ==================================================
 
-def train_model():
+def validate_release():
 
-    try:
+    def _run():
 
         trainer = ModelTrainer(
-            CONFIG_FILE
-        )
-
-        result = trainer.train()
-
-        metrics = result["metrics"]
-
-        return f"""
-Training Complete
-
-Run:
-{result["run_name"]}
-
-Dataset:
-{result["dataset_version"]}
-
-Best Model:
-{result["best_model"]}
-
-Metrics:
-{json.dumps(metrics, indent=2)}
-"""
-
-    except Exception as ex:
-
-        return f"ERROR\n\n{ex}"
-
-
-# =====================================================
-# Dataset Validation
-# =====================================================
-
-def validate_dataset():
-
-    try:
-
-        trainer = ModelTrainer(
-            CONFIG_FILE
+            CONFIG_PATH
         )
 
         summary = (
@@ -113,17 +92,56 @@ def validate_dataset():
             indent=2
         )
 
-    except Exception as ex:
-
-        return f"ERROR\n\n{ex}"
+    return safe_call(_run)
 
 
-# =====================================================
-# Gradio UI
-# =====================================================
+# ==================================================
+# Training
+# ==================================================
+
+def train_model():
+
+    def _run():
+
+        trainer = ModelTrainer(
+            CONFIG_PATH
+        )
+
+        result = trainer.train()
+
+        return json.dumps(
+            {
+                "run_name":
+                    result["run_name"],
+
+                "dataset_version":
+                    result[
+                        "dataset_version"
+                    ],
+
+                "best_model":
+                    result[
+                        "best_model"
+                    ],
+
+                "metrics":
+                    result[
+                        "metrics"
+                    ],
+            },
+            indent=2,
+        )
+
+    return safe_call(_run)
+
+
+# ==================================================
+# Main app
+# ==================================================
 
 with gr.Blocks(
-    title="Music Annotation Project"
+    title="Music Annotation Project",
+    fill_width=True,
 ) as app:
 
     gr.Markdown(
@@ -132,85 +150,63 @@ with gr.Blocks(
 
 End-to-end workflow:
 
-1. Generate Draft Masks
+1. Generate YOLO Draft Masks
 2. Review Drafts
 3. Build Dataset Release
-4. Train Model
+4. Validate Dataset Release
+5. Train New Model
+6. Run Pilot Reviewer
 """
     )
 
-    # -------------------------------------------------
-    # Generate Drafts
-    # -------------------------------------------------
+    # ------------------------------------------------
+    # Draft Generation
+    # ------------------------------------------------
 
-    with gr.Tab(
-        "Generate Drafts"
-    ):
+    with gr.Tab("Generate Drafts"):
 
         gr.Markdown(
             """
-Run YOLO on unreviewed source
-pages and generate:
+Generate:
 
-- draft masks
-- confidence maps
-- draft audits
+- Draft masks
+- Confidence maps
+- Draft audits
+
+for all unreviewed pages.
 """
         )
 
         draft_btn = gr.Button(
-            "Generate Draft Masks",
+            "Generate Drafts",
             variant="primary"
         )
 
-        draft_status = gr.Textbox(
-            label="Status",
-            lines=10
+        draft_output = gr.Textbox(
+            lines=12,
+            label="Output"
         )
 
         draft_btn.click(
-            fn=generate_drafts,
-            outputs=draft_status
+            generate_drafts,
+            outputs=draft_output,
         )
 
-    # -------------------------------------------------
-    # Review Drafts
-    # -------------------------------------------------
+    # ------------------------------------------------
+    # Dataset Builder
+    # ------------------------------------------------
 
-    with gr.Tab(
-        "Review Drafts"
-    ):
+    with gr.Tab("Build Dataset"):
 
         gr.Markdown(
             """
-The canvas reviewer currently
-runs from review_app.py.
+Create immutable dataset release.
 
-Once migrated:
+Builds:
 
-- load page
-- add annotations
-- erase false positives
-- save reviewed mask
-"""
-        )
-
-        gr.Info(
-            "Reviewer integration pending."
-        )
-
-    # -------------------------------------------------
-    # Build Dataset
-    # -------------------------------------------------
-
-    with gr.Tab(
-        "Build Dataset"
-    ):
-
-        gr.Markdown(
-            """
-Builds the immutable
-schema-3 dataset release.
+- page objects
+- manifests
+- dataset versions
 """
         )
 
@@ -219,52 +215,51 @@ schema-3 dataset release.
             variant="primary"
         )
 
-        build_status = gr.Textbox(
-            label="Build Log",
-            lines=15
+        build_output = gr.Textbox(
+            lines=15,
+            label="Output"
         )
 
         build_btn.click(
-            fn=build_dataset,
-            outputs=build_status
+            build_dataset,
+            outputs=build_output,
         )
 
-    # -------------------------------------------------
-    # Validate Release
-    # -------------------------------------------------
+    # ------------------------------------------------
+    # Validate
+    # ------------------------------------------------
 
-    with gr.Tab(
-        "Validate Release"
-    ):
+    with gr.Tab("Validate Release"):
 
         validate_btn = gr.Button(
             "Run Safety Gate"
         )
 
-        validation_output = gr.Code(
+        validate_output = gr.Code(
             language="json"
         )
 
         validate_btn.click(
-            fn=validate_dataset,
-            outputs=validation_output
+            validate_release,
+            outputs=validate_output,
         )
 
-    # -------------------------------------------------
+    # ------------------------------------------------
     # Training
-    # -------------------------------------------------
+    # ------------------------------------------------
 
-    with gr.Tab(
-        "Train Model"
-    ):
+    with gr.Tab("Training"):
 
         gr.Markdown(
             """
-Stages dataset release,
-trains YOLO,
-validates,
-runs GST comparison,
-and exports outputs.
+Workflow:
+
+- Load release
+- Stage dataset
+- Train YOLO
+- Validation
+- GST comparison
+- Export results
 """
         )
 
@@ -273,48 +268,85 @@ and exports outputs.
             variant="primary"
         )
 
-        training_output = gr.Textbox(
-            label="Training Status",
-            lines=20
+        train_output = gr.Code(
+            language="json"
         )
 
         train_btn.click(
-            fn=train_model,
-            outputs=training_output
+            train_model,
+            outputs=train_output,
         )
 
-    # -------------------------------------------------
-    # About
-    # -------------------------------------------------
+    # ------------------------------------------------
+    # Pilot Reviewer
+    # ------------------------------------------------
 
-    with gr.Tab(
-        "Project Status"
-    ):
+    with gr.Tab("Pilot Reviewer"):
 
-        status_text = """
-Current architecture
+        gr.Markdown(
+            """
+Loads the frozen V7.7F policy,
+runs the regression gate,
+builds proposals and launches
+the supervised reviewer.
+"""
+        )
 
-✅ HITL Draft Generation
+        try:
+
+            reviewer = (
+                PilotReviewer(
+                    CONFIG_PATH
+                )
+            )
+
+            reviewer.build()
+
+        except Exception as e:
+
+            gr.Error(
+                f"Pilot reviewer "
+                f"failed to load: {e}"
+            )
+
+    # ------------------------------------------------
+    # System Status
+    # ------------------------------------------------
+
+    with gr.Tab("System Status"):
+
+        gr.Markdown(
+            """
+### Refactored Modules
+
+✅ Draft Generator
 
 ✅ Dataset Builder
 
 ✅ Dataset Releases
 
-✅ Trainer
+✅ Dataset Staging
 
-✅ GST Evaluator
+✅ Training
 
-✅ Run Exporter
+✅ GST Evaluation
 
-🚧 Canvas Reviewer Integration
+✅ Run Export
+
+✅ Pilot Reviewer
+
+✅ Frozen Policy Bundle
+
+✅ Regression Gate
+
+✅ Decision Preservation
 """
+        )
 
-        gr.Markdown(status_text)
 
-
-# =====================================================
+# ==================================================
 # Launch
-# =====================================================
+# ==================================================
 
 if __name__ == "__main__":
 
