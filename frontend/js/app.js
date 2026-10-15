@@ -1,16 +1,21 @@
 const API_BASE =
     "https://your-api-url.com";
 
-async function callApi(
-    endpoint
-) {
+async function callApi(endpoint) {
+
+    const output =
+        document.getElementById(
+            "output"
+        );
+
+    output.textContent =
+        "Running...";
 
     try {
 
         const response =
             await fetch(
-                API_BASE +
-                endpoint,
+                API_BASE + endpoint,
                 {
                     method: "POST"
                 }
@@ -19,52 +24,37 @@ async function callApi(
         const data =
             await response.json();
 
-        document
-            .getElementById(
-                "output"
-            )
-            .textContent =
+        output.textContent =
             JSON.stringify(
                 data,
                 null,
                 2
             );
 
-    } catch (error) {
+    }
+    catch (error) {
 
-        document
-            .getElementById(
-                "output"
-            )
-            .textContent =
-            error.toString();
+        output.textContent =
+            "ERROR\n\n" + error;
     }
 }
 
 function alignPages() {
-
-    callApi(
-        "/align"
-    );
+    callApi("/align");
 }
 
 function generateDrafts() {
-
-    callApi(
-        "/drafts"
-    );
+    callApi("/drafts");
 }
 
 function buildDataset() {
+    callApi("/dataset");
+}
 
-    callApi(
-        "/dataset"
-    );
+function validateRelease() {
+    callApi("/validate");
 }
 
 function trainModel() {
-
-    callApi(
-        "/train"
-    );
+    callApi("/train");
 }
