@@ -1,33 +1,167 @@
 ---
-title: Music Annotation Control Centre
-emoji: 🎼🎺🎶
+title: Music Annotation Project
+emoji: 🎼
 colorFrom: blue
-colorTo: indigo
+colorTo: green
 sdk: gradio
 app_file: app.py
 pinned: false
 ---
 
-# Music Annotation Control Centre
+# 🎼 Music Annotation Project
 
-Version 1 is a html launcher for the existing Google Colab workflow. It does not execute training inside GitHub or inspect private Google Drive contents.
+A Gradio-based workflow for detecting handwritten annotations on sheet music, reviewing corrections, building immutable training datasets, and training improved YOLO segmentation models.
 
-## Workflow
+## Features
 
-1. Prepare Existing Pages.
-2. Generate HITL Drafts.
-3. Review Draft Masks.
-4. Build Training Dataset.
-5. Run Dataset Forensics.
-6. Train Model.
-7. Evaluate Models.
+### Draft Generation
 
-Page normalisation is an optional experiment.
+Generate:
 
-## Existing Drive assumptions
+- YOLO draft masks
+- confidence maps
+- draft audit records
 
-The notebooks use `/content/drive/MyDrive/MusicAnnotationProject` directly or read `project_root` from `/content/drive/MyDrive/MusicAnnotationProject/project_config.json`. Review each configuration cell before running.
+for unreviewed pages.
 
-## Security and size
+### Review & Correction
 
-The `.gitignore` excludes checkpoints, datasets, source pages, masks, predictions, confidence maps and pipeline state. Keep these in Google Drive or suitable private storage.
+Review detections and corrections using:
+
+- human-in-the-loop workflows
+- confidence-guided annotation review
+- structural risk scoring
+- component-level auditing
+
+### Dataset Management
+
+Build immutable dataset releases including:
+
+- page objects
+- manifests
+- dataset versions
+- publication metadata
+
+### Model Training
+
+Train segmentation models from published dataset releases.
+
+Includes:
+
+- release validation
+- dataset staging
+- YOLO training
+- validation metrics
+- GST evaluation
+- model export
+
+### Structural Pilot Reviewer
+
+Includes:
+
+- frozen V7.7F policy validation
+- regression-gated execution
+- geometry reconstruction verification
+- decision preservation across edits
+- supervised review workflows
+
+---
+
+## Application Workflow
+
+```text
+Upload Pages
+      ↓
+Generate Draft Masks
+      ↓
+Review & Correct
+      ↓
+Build Dataset Release
+      ↓
+Train YOLO Model
+      ↓
+Evaluate
+      ↓
+Deploy
+```
+
+---
+
+## Project Structure
+
+```text
+app.py
+
+modules/
+
+├── hitl_generator.py
+├── dataset_builder.py
+├── dataset_release.py
+├── dataset_stager.py
+├── trainer.py
+├── gst_evaluator.py
+├── run_exporter.py
+│
+└── pilot/
+    ├── structural.py
+    ├── policy_bundle.py
+    ├── regression_gate.py
+    ├── hitl_resolution.py
+    ├── proposal_builder.py
+    ├── decision_manager.py
+    ├── reviewer_backend.py
+    ├── reviewer_ui.py
+    └── pilot_reviewer.py
+```
+
+---
+
+## Requirements
+
+The application uses:
+
+- Gradio
+- OpenCV
+- NumPy
+- Pandas
+- Ultralytics YOLO
+- Scikit-learn
+- Joblib
+- PyTorch
+
+---
+
+## Notes
+
+This repository contains the refactored application architecture originally developed in a collection of Google Colab notebooks.
+
+For Hugging Face deployment:
+
+- avoid Google Drive dependencies
+- use relative project paths
+- keep large datasets and training artefacts outside the repository
+- upload trained models separately when required
+
+---
+
+## Current Status
+
+✅ Draft Generation
+
+✅ Dataset Builder
+
+✅ Dataset Publication
+
+✅ Training Pipeline
+
+✅ GST Evaluation
+
+✅ Run Export
+
+✅ Structural Pilot Reviewer
+
+✅ Decision Preservation
+
+🚧 Deployment Hardening
+
+🚧 Production Model Registry
