@@ -1,107 +1,18 @@
 body {
-
-    margin: 0;
-
-    font-family:
-        "Segoe UI",
-        Arial,
-        sans-serif;
-
     background: #f5f7fa;
 }
 
-.header {
-
-    background: #003366;
-
-    color: white;
-
-    padding: 25px;
-}
-
-.header h1 {
-
-    margin: 0;
-}
-
-main {
-
-    padding: 20px;
-}
-
-.card-grid {
-
-    display: grid;
-
-    gap: 20px;
-
-    grid-template-columns:
-        repeat(
-            auto-fit,
-            minmax(
-                250px,
-                1fr
-            )
-        );
-}
-
 .card {
-
-    background: white;
-
-    padding: 20px;
-
-    border-radius: 12px;
-
-    box-shadow:
-        0 2px 8px
-        rgba(
-            0,
-            0,
-            0,
-            0.1
-        );
-}
-
-.card h2 {
-
-    margin-top: 0;
-}
-
-button {
-
     border: none;
-
-    background: #0066cc;
-
-    color: white;
-
-    padding: 10px 16px;
-
-    border-radius: 6px;
-
-    cursor: pointer;
-}
-
-button:hover {
-
-    background: #0053a6;
-}
-
-.results {
-
-    margin-top: 30px;
 }
 
 pre {
+    min-height: 300px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+}
 
-    background: white;
-
-    padding: 20px;
-
-    border-radius: 10px;
-
-    min-height: 250px;
-
-    overflow: auto;
+.navbar-brand {
+    font-size: 1.4rem;
 }
