@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="utf-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>
+        Music Annotation Project
+    </title>
+
+    css/main.css
+
+</head>
+
+<body>
+
+    <header class="header">
+
+        <h1>
+            🎼 Music Annotation Project
+        </h1>
+
+        <p>
+            End-to-end sheet music
+            annotation workflow
+        </p>
+
+    </header>
+
+    <main>
+
+        <div class="card-grid">
+
+            <div class="card">
+
+                <h2>Alignment</h2>
+
+                <p>
+                    Align clean and
+                    annotated source pages
+                </p>
+
+                <button
+                    onclick="alignPages()">
+                    Run Alignment
+                </button>
+
+            </div>
+
+            <div class="card">
+
+                <h2>Draft Masks</h2>
+
+                <p>
+                    Generate draft masks and
+                    confidence maps
+                </p>
+
+                <button
+                    onclick="generateDrafts()">
+                    Generate Drafts
+                </button>
+
+            </div>
+
+            <div class="card">
+
+                <h2>Dataset</h2>
+
+                <p>
+                    Build immutable dataset
+                    releases
+                </p>
+
+                <button
+                    onclick="buildDataset()">
+                    Build Dataset
+                </button>
+
+            </div>
+
+            <div class="card">
+
+                <h2>Training</h2>
+
+                <p>
+                    Train YOLO models
+                </p>
+
+                <button
+                    onclick="trainModel()">
+                    Train Model
+                </button>
+
+            </div>
+
+        </div>
+
+        <section class="results">
+
+            <h2>Output</h2>
+
+            <pre id="output">
+Ready
+            </pre>
+
+        </section>
+
+    </main>
+
+    js/app.jsscript>
+
+</body>
+
+</html>
