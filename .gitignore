@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+
+training_runs/
+predictions/
+dataset_versions/
+dataset_store/
+outputs/
+
+*.pt
+*.pth
+*.onnx
+
+.env
