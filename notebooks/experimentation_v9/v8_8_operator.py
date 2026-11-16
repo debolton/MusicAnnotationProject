@@ -257,6 +257,59 @@ def _resolve_decisions(context: RuntimeContext, verified: Mapping[str, Any], sha
     return safe_remove, probability_map, {"decision_mode": mode, "decision_rows": int(len(frame)), "selected_rows": int(selected.sum())}
 
 
+def load_operator(
+    artifacts: FrozenArtifacts | Mapping[str, Any],
+    *,
+    page_id: str = "",
+    feature_table: Any = None,
+    registered_decisions: Any = None,
+    mask_is_prepared_m3: bool = True,
+    mask_dilation: int = 0,
+    reconstruction_method: str = "telea",
+    inpaint_radius: int = 3,
+    crop_margin: int = 48,
+    minimum_component_area: int = 8,
+    policy_metadata: Optional[Mapping[str, Any]] = None,
+) -> RuntimeContext:
+    """
+    Load and verify the frozen V8.8 operator environment.
+
+    No page processing occurs here. This function verifies the frozen
+    artefacts and returns the RuntimeContext consumed by run_page().
+    """
+    if isinstance(artifacts, Mapping):
+        artifacts = FrozenArtifacts(**artifacts)
+
+    if not isinstance(artifacts, FrozenArtifacts):
+        raise TypeError(
+            "artifacts must be FrozenArtifacts or a compatible mapping."
+        )
+
+    # Fail closed before processing any page.
+    verified = verify_artifacts(artifacts)
+
+    metadata = dict(policy_metadata or {})
+    metadata.update({
+        "operator_version": OPERATOR_VERSION,
+        "policy_id": verified["policy"].get("policy_id"),
+        "artefacts_verified": True,
+    })
+
+    return RuntimeContext(
+        artifacts=artifacts,
+        page_id=str(page_id),
+        feature_table=feature_table,
+        registered_decisions=registered_decisions,
+        mask_is_prepared_m3=bool(mask_is_prepared_m3),
+        mask_dilation=int(mask_dilation),
+        reconstruction_method=str(reconstruction_method),
+        inpaint_radius=int(inpaint_radius),
+        crop_margin=int(crop_margin),
+        minimum_component_area=int(minimum_component_area),
+        policy_metadata=metadata,
+    )
+
+
 def run_page(observed: np.ndarray, authoritative_seed_mask: np.ndarray, runtime_context: RuntimeContext | Mapping[str, Any]) -> PageResult:
     started = time.perf_counter()
     context = runtime_context if isinstance(runtime_context, RuntimeContext) else RuntimeContext(**runtime_context)
@@ -362,4 +415,4 @@ def replay_page(observed: np.ndarray, authoritative_seed_mask: np.ndarray, runti
     return {"passed": bool(deterministic and not mismatches), "deterministic": deterministic, "hashes": current, "mismatches": mismatches}
 
 
-__all__ = ["FrozenArtifacts", "RuntimeContext", "PageResult", "verify_artifacts", "prepare_mask", "run_page", "replay_page"]
+__all__ = ["FrozenArtifacts", "RuntimeContext", "PageResult", "verify_artifacts", "prepare_mask", "load_page", "run_page", "replay_page"]
