@@ -1,878 +1,176 @@
-"""Frozen V8.8 observed-print operator for Notebook 72.
+"""Unified V8.8 observed-print / SAFE_REMOVE operator.
 
-Public API
-==========
-    operator = load_operator(v88_bundle_root)
-    replay = replay_page(operator, v88_bundle_root)
-    result = run_page(observed, authoritative_seed_mask, operator, runtime_context=None)
-
-Bundle contract
-===============
-`v88_bundle_root` is a DIRECTORY containing `operator_bundle.json` either at
-its root or below `policy_bundle/`.
-
-The manifest must identify a deployable, all-development model rather than an
-OOF decision table.  Example:
-
-{
-  "operator_id": "v8.8-frozen-remove-operator",
-  "policy_id": "...",
-  "implementation_id": "...",
-  "architecture": "topology_cnn_v8_2",
-  "model": {"path": "artefacts/model.pt", "sha256": "..."},
-  "calibrator": {"path": "artefacts/calibrator.joblib", "sha256": "..."},
-  "channel_schema": {"path": "artefacts/channel_schema.json", "sha256": "..."},
-  "policy": {"path": "artefacts/policy.json", "sha256": "..."},
-  "replay": {"path": "replay/replay_test.npz", "sha256": "..."},
-  "constants": {
-    "mask_dilation": 2,
-    "patch": 33,
-    "dark_threshold": 200,
-    "print_threshold": 0.995,
-    "annotation_threshold": 0.995,
-    "print_margin": 0.990,
-    "minimum_print_run": 2,
-    "batch_size": 512,
-    "crop_margin": 48
-  }
-}
-
-The channel schema must contain the ordered V8 channels. The supported frozen
-architecture is the compact 11-channel V8 TopologyCNN used in the durable V8.2
-lineage. The module fails closed if the Notebook 52 directory contains only
-registered Notebook 50 OOF decisions. OOF rows are replay evidence, not an
-unseen-page decision engine.
+Runtime inputs are an observed uint8 grayscale page and an authoritative undilated
+seed mask. Clean/truth data is prohibited. The operator verifies both frozen
+bundles, prepares the canonical dilation-2 V7.8 context, obtains calibrated
+p_print from the V8.2F provider, builds the approved 17 predictors, obtains
+calibrated REMOVE probabilities from the 52F bundle, applies the frozen
+page-global SAFE_REMOVE rule, and returns M5_REMOVE plus audited page arrays.
 """
-
 from __future__ import annotations
-
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
-import hashlib
-import json
-import platform
-import sys
-import time
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+import hashlib, importlib.util, json, platform, sys
+import cv2, joblib, numpy as np, pandas as pd, torch
 
-import cv2
-import joblib
-import numpy as np
-import pandas as pd
+MASK_DILATION=2
+CROP_MARGIN=48
+GEOMETRY_THRESHOLD=80
+BAND_WIDTH=4
+P_PRINT_BATCH=512
+EXPECTED_CHANNELS=['obs','norm','mask','depth','horizontal','vertical','compact','preserve','remove','ambiguous','edge']
+EXPECTED_PREDICTORS=['observed_value','normalised_value','paper_value','mask_depth','boundary_distance','distance_to_protected','edge','local_edge_fraction','local_dark_fraction','local_preserve_fraction','local_remove_fraction','local_ambiguous_fraction','local_horizontal_fraction','local_vertical_fraction','local_compact_fraction','p_print','component_id']
 
-try:
-    import torch
-    from torch import nn
-except Exception as exc:  # pragma: no cover
-    torch = None
-    nn = None
-    _TORCH_IMPORT_ERROR = exc
-else:
-    _TORCH_IMPORT_ERROR = None
-
-
-OPERATOR_ID = "v8.8-frozen-observed-print-operator"
-OPERATOR_VERSION = "3.0.0"
-
-DECISION_INELIGIBLE = np.uint8(0)
-DECISION_ANNOTATION = np.uint8(1)
-DECISION_UNCERTAIN = np.uint8(2)
-DECISION_PRINT = np.uint8(3)
-
-DEFAULT_CHANNELS = (
-    "obs", "norm", "mask", "depth", "horizontal", "vertical", "compact",
-    "preserve", "remove", "ambiguous", "edge",
-)
-
-
-def _require(condition: Any, message: str) -> None:
-    if not bool(condition):
-        raise RuntimeError(message)
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    _require(path.is_file(), f"Missing JSON file: {path}")
-    try:
-        value = json.loads(path.read_text())
-    except Exception as exc:
-        raise RuntimeError(f"Unreadable JSON file {path}: {exc}") from exc
-    _require(isinstance(value, dict), f"JSON root must be an object: {path}")
-    return value
-
-
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            h.update(block)
+def _require(x: bool,msg: str)->None:
+    if not bool(x): raise RuntimeError(msg)
+def _sha256(path: Path)->str:
+    h=hashlib.sha256()
+    with open(path,'rb') as f:
+        for b in iter(lambda:f.read(1048576),b''): h.update(b)
     return h.hexdigest()
+def _read_json(path: Path)->dict: return json.loads(path.read_text())
+def _verify(path: Path, expected: Optional[str], label: str)->None:
+    _require(path.exists(),f'Missing {label}: {path}')
+    if expected: _require(_sha256(path)==expected,f'{label} SHA-256 mismatch: {path}')
+def _load_module(path: Path):
+    spec=importlib.util.spec_from_file_location('v8_2f_p_print_provider',path)
+    _require(spec is not None and spec.loader is not None,f'Cannot import provider source: {path}')
+    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module
 
-
-def _sha256_array(array: np.ndarray) -> str:
-    value = np.ascontiguousarray(array)
-    h = hashlib.sha256()
-    h.update(str(value.dtype).encode())
-    h.update(str(value.shape).encode())
-    h.update(value.tobytes())
-    return h.hexdigest()
-
-
-def _resolve_file(root: Path, record: Mapping[str, Any], label: str) -> Path:
-    raw = record.get("path")
-    _require(raw, f"operator_bundle.json is missing {label}.path")
-    path = Path(str(raw)).expanduser()
-    if not path.is_absolute():
-        path = root / path
-    path = path.resolve()
-    _require(path.is_file(), f"Missing frozen {label}: {path}")
-    expected = str(record.get("sha256", "")).strip().lower()
-    _require(expected, f"operator_bundle.json is missing {label}.sha256")
-    actual = _sha256_file(path)
-    _require(actual == expected, f"Frozen {label} hash mismatch: {path}")
-    return path
-
-
-def _binary(mask: np.ndarray) -> np.ndarray:
-    return np.where(np.asarray(mask) > 0, 255, 0).astype(np.uint8)
-
-
-def _immutable(original: np.ndarray, candidate: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    result = original.copy()
-    selected = np.asarray(mask) > 0
-    result[selected] = candidate[selected]
-    _require(np.array_equal(result[~selected], original[~selected]),
-             "Candidate changed pixels outside its authorised mask.")
-    return result
-
-
-if nn is not None:
-    class TopologyCNN(nn.Module):
-        """Exact compact CNN architecture used by the V8.2 durable lineage."""
-
-        def __init__(self, nc: int = 11):
-            super().__init__()
-            self.net = nn.Sequential(
-                nn.Conv2d(nc, 24, 3, padding=1),
-                nn.ReLU(),
-                nn.BatchNorm2d(24),
-                nn.MaxPool2d(2),
-                nn.Conv2d(24, 48, 3, padding=1),
-                nn.ReLU(),
-                nn.BatchNorm2d(48),
-                nn.MaxPool2d(2),
-                nn.Conv2d(48, 64, 3, padding=1),
-                nn.ReLU(),
-                nn.AdaptiveAvgPool2d(1),
-            )
-            self.head = nn.Linear(64, 2)
-
-        def forward(self, value):
-            return self.head(self.net(value).flatten(1))
-else:  # pragma: no cover
-    class TopologyCNN:  # type: ignore
-        pass
-
+def binary(mask): return np.where(np.asarray(mask)>0,255,0).astype(np.uint8)
+def prepare_mask(seed,dilation=MASK_DILATION):
+    out=binary(seed)
+    if dilation>0: out=cv2.dilate(out,cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(2*dilation+1,2*dilation+1)))
+    return out
+def immutable(original,candidate,mask):
+    out=original.copy(); out[mask>0]=candidate[mask>0]
+    _require(np.array_equal(out[mask==0],original[mask==0]),'Outside-mask immutability failure.')
+    return out
+def padded_components(mask):
+    n,lab,stats,_=cv2.connectedComponentsWithStats((mask>0).astype(np.uint8),8); h,w=mask.shape; boxes=[]
+    for i in range(1,n):
+        x,y,bw,bh,area=stats[i]
+        if area>=8: boxes.append((max(0,x-CROP_MARGIN),max(0,y-CROP_MARGIN),min(w,x+bw+CROP_MARGIN),min(h,y+bh+CROP_MARGIN)))
+    changed=True
+    while changed:
+        changed=False; merged=[]
+        while boxes:
+            ax0,ay0,ax1,ay1=boxes.pop(); rest=[]
+            for bx0,by0,bx1,by1 in boxes:
+                if not (ax1<bx0 or bx1<ax0 or ay1<by0 or by1<ay0):
+                    ax0=min(ax0,bx0); ay0=min(ay0,by0); ax1=max(ax1,bx1); ay1=max(ay1,by1); changed=True
+                else: rest.append((bx0,by0,bx1,by1))
+            boxes=rest; merged.append((ax0,ay0,ax1,ay1))
+        boxes=merged
+    return boxes
+def telea_reconstruct(observed,mask):
+    result=observed.copy()
+    for x0,y0,x1,y1 in padded_components(mask):
+        im=observed[y0:y1,x0:x1]; mk=mask[y0:y1,x0:x1]; cand=cv2.inpaint(im,mk,3,cv2.INPAINT_TELEA); local=result[y0:y1,x0:x1]; local[mk>0]=cand[mk>0]; result[y0:y1,x0:x1]=local
+    return immutable(observed,result,mask)
+def background_surface(observed,mask,sigma=45.0):
+    m=np.asarray(mask)>0; visible=(~m)&(observed>=200); num=cv2.GaussianBlur(observed.astype(np.float32)*visible,(0,0),sigma); den=cv2.GaussianBlur(visible.astype(np.float32),(0,0),sigma); fallback=cv2.GaussianBlur(observed,(0,0),sigma)
+    return np.clip(np.where(den>.02,num/np.maximum(den,1e-4),fallback),0,255).astype(np.uint8)
+def support_maps(observed,mask):
+    dark=(observed<190)&(mask==0); h=cv2.morphologyEx(dark.astype(np.uint8)*255,cv2.MORPH_OPEN,np.ones((1,35),np.uint8))>0; v=cv2.morphologyEx(dark.astype(np.uint8)*255,cv2.MORPH_OPEN,np.ones((15,1),np.uint8))>0
+    n,lab,stats,_=cv2.connectedComponentsWithStats(dark.astype(np.uint8),8); c=np.zeros_like(dark)
+    for i in range(1,n):
+        x,y,w,hg,a=stats[i]
+        if 3<=a<=650 and w<=40 and hg<=40: c[lab==i]=True
+    k=np.ones((2*BAND_WIDTH+1,2*BAND_WIDTH+1),np.uint8)
+    return cv2.dilate(h.astype(np.uint8),k)>0,cv2.dilate(v.astype(np.uint8),k)>0,cv2.dilate(c.astype(np.uint8),k)>0
+def geometry_t80(observed,mask,telea):
+    paper=background_surface(observed,mask); normalised=cv2.divide(observed,np.maximum(paper,1),scale=255); horizontal,vertical,compact=support_maps(observed,mask); m=mask>0
+    preserve=m&(horizontal|vertical|compact)&(observed<200); remove=m&~preserve&(observed>=GEOMETRY_THRESHOLD)&(normalised>=GEOMETRY_THRESHOLD); ambiguous=m&~preserve&~remove
+    result=observed.copy(); result[remove]=paper[remove]; result[ambiguous]=telea[ambiguous]; result[preserve]=observed[preserve]
+    return immutable(observed,result,mask),{'preserve':preserve,'remove':remove,'ambiguous':ambiguous,'horizontal':horizontal,'vertical':vertical,'compact':compact,'paper':paper,'normalised':normalised}
+def frac(a,k=5): return cv2.blur(np.asarray(a).astype(np.float32),(k,k))
+def dist_to(mask):
+    mask=np.asarray(mask,bool)
+    return cv2.distanceTransform((~mask).astype(np.uint8),cv2.DIST_L2,5) if mask.any() else np.full(mask.shape,float(max(mask.shape)),np.float32)
 
 @dataclass(frozen=True)
-class OperatorContext:
-    bundle_root: Path
-    notebook50_run: Path
-    policy_id: str
-
-    policy_manifest_path: Path
-    predictor_schema_path: Path
-    decision_table_path: Path
-
-    policy: Mapping[str, Any]
-    schema: Mapping[str, Any]
-    decision_table: Any
-
-    audit: Mapping[str, Any] = field(default_factory=dict)
-
-    @property
-    def capabilities(self) -> dict[str, bool\]:
-        return {
-            "registered_replay": True,
-            "unseen_page_inference": False,
-            "requires_external_decisions": True,
-            "uses_clean_truth": False,
-        }
-
-    def for_page(self, page_id: str) -> "PageOperatorContext":
-        page_id = str(page_id)
-
-        rows = self.decision_table[
-            self.decision_table["page"].astype(str) == page_id
-        ].copy()
-
-        _require(
-            not rows.empty,
-            f"Page {page_id!r} is absent from the registered "
-            "Notebook 50 decision table."
-        )
-
-        return PageOperatorContext(
-            operator=self,
-            page_id=page_id,
-            decisions=rows,
-        )
-
-    def run_page(
-        self,
-        observed: np.ndarray,
-        authoritative_seed_mask: np.ndarray,
-        runtime_context: Optional[Mapping[str, Any]] = None,
-    ) -> "PageResult":
-        return run_page(observed, authoritative_seed_mask, self, runtime_context)
-
-    def run_replay_test(self) -> dict[str, Any]:
-        return replay_page(self, self.bundle_root)
-
-@dataclass(frozen=True)
-class PageOperatorContext:
-    operator: OperatorContext
-    page_id: str
-    decisions: Any
-
-    @property
-    def bundle_root(self) -> Path:
-        return self.operator.bundle_root
-
-    @property
-    def notebook50_run(self) -> Path:
-        return self.operator.notebook50_run
-
-    @property
-    def policy_id(self) -> str:
-        return self.operator.policy_id
-
-    @property
-    def policy(self) -> Mapping[str, Any\]:
-        return self.operator.policy
-
-    @property
-    def schema(self) -> Mapping[str, Any\]:
-        return self.operator.schema
-
-    @property
-    def audit(self) -> Mapping[str, Any\]:
-        return self.operator.audit
-
+class OperatorCapabilities:
+    unseen_page_inference: bool=True
+    registered_replay: bool=True
+    requires_external_decisions: bool=False
+    uses_clean_truth: bool=False
+    requires_authoritative_seed_mask: bool=True
 
 @dataclass
 class PageResult:
     corrected: np.ndarray
-    baseline: np.ndarray
-    prepared_mask: np.ndarray
-    decisions: np.ndarray
-    probabilities: dict[str, np.ndarray]
-    changed: dict[str, np.ndarray]
-    audit: dict[str, Any]
-    print_mask: np.ndarray
-    annotation_mask: np.ndarray
-    uncertain_mask: np.ndarray
-    eligible_mask: np.ndarray
-
-
-def load_operator(
-    v88_bundle_root: Any,
-) -> OperatorContext:
-    """
-    Load the completed Notebook 52 V8.8A freeze and its authoritative
-    Notebook 50 registered-decision source.
-
-    This loader supports registered replay. It does not claim that an
-    all-development deployable scorer for previously unseen pages exists.
-    """
-
-    root = Path(v88_bundle_root).expanduser().resolve()
-
-    _require(
-        root.is_dir(),
-        f"v88_bundle_root must be a Notebook 52 run directory: {root}",
-    )
-
-    verdict_path = root / "notebook52_verdict.json"
-    policy_path = root / "policy_bundle" / "policy_manifest.json"
-
-    _require(
-        verdict_path.is_file(),
-        f"Missing Notebook 52 verdict: {verdict_path}",
-    )
-
-    _require(
-        policy_path.is_file(),
-        f"Missing Notebook 52 policy manifest: {policy_path}",
-    )
-
-    verdict = _read_json(verdict_path)
-    policy = _read_json(policy_path)
-
-    _require(
-        verdict.get("verdict")
-        == "PASS_M5_REMOVE_FREEZE_READY_FOR_OPERATIONAL_BUILDER",
-        f"Notebook 52 did not pass its operational-builder gate: {verdict}",
-    )
-
-    _require(
-        policy.get("policy") == "M5_REMOVE",
-        f"Frozen policy is not M5_REMOVE: {policy.get('policy')!r}",
-    )
-
-    _require(
-        policy.get("safe_protect_runtime_enabled") is False,
-        "SAFE_PROTECT must remain disabled.",
-    )
-
-    _require(
-        policy.get("retraining_performed") is False,
-        "Notebook 52 records unexpected retraining.",
-    )
-
-    _require(
-        policy.get("recalibration_performed") is False,
-        "Notebook 52 records unexpected recalibration.",
-    )
-
-    _require(
-        policy.get("threshold_changed") is False,
-        "Notebook 52 records an unexpected threshold change.",
-    )
-
-    notebook50_raw = policy.get("authoritative_notebook50_run")
-
-    _require(
-        notebook50_raw,
-        "Policy manifest does not identify authoritative_notebook50_run.",
-    )
-
-    notebook50_run = Path(
-        notebook50_raw
-    ).expanduser().resolve()
-
-    _require(
-        notebook50_run.is_dir(),
-        "Authoritative Notebook 50 run does not exist: "
-        f"{notebook50_run}",
-    )
-
-    schema_path = (
-        notebook50_run
-        / "inputs"
-        / "predictor_schema.json"
-    )
-
-    decision_table_path = (
-        notebook50_run
-        / "tables"
-        / "all_m3_oof_predictions_and_decisions.parquet"
-    )
-
-    _require(
-        schema_path.is_file(),
-        f"Missing Notebook 50 predictor schema: {schema_path}",
-    )
-
-    _require(
-        decision_table_path.is_file(),
-        f"Missing Notebook 50 registered decision table: "
-        f"{decision_table_path}",
-    )
-
-    schema = _read_json(schema_path)
-    decision_table = pd.read_parquet(
-        decision_table_path
-    )
-
-    required_columns = {
-        "page",
-        "y",
-        "x",
-        "safe_remove",
-    }
-
-    missing_columns = (
-        required_columns
-        - set(decision_table.columns)
-    )
-
-    _require(
-        not missing_columns,
-        "Notebook 50 decision table is missing fields: "
-        f"{sorted(missing_columns)}",
-    )
-
-    decision_table = decision_table.copy()
-    decision_table["page"] = (
-        decision_table["page"].astype(str)
-    )
-    decision_table["y"] = pd.to_numeric(
-        decision_table["y"],
-        errors="raise",
-    ).astype(int)
-    decision_table["x"] = pd.to_numeric(
-        decision_table["x"],
-        errors="raise",
-    ).astype(int)
-    decision_table["safe_remove"] = (
-        decision_table["safe_remove"]
-        .astype(bool)
-    )
-
-    _require(
-        not decision_table.duplicated(
-            ["page", "y", "x"]
-        ).any(),
-        "Notebook 50 decision table contains duplicate "
-        "page/y/x coordinates.",
-    )
-
-    audit = {
-        "operator_id":
-            "v8.8-registered-m5-remove-replay",
-
-        "operator_version":
-            OPERATOR_VERSION,
-
-        "policy_id":
-            str(policy["policy_id"]),
-
-        "notebook52_run":
-            str(root),
-
-        "notebook52_verdict_sha256":
-            _sha256_file(verdict_path),
-
-        "policy_manifest_sha256":
-            _sha256_file(policy_path),
-
-        "authoritative_notebook50_run":
-            str(notebook50_run),
-
-        "predictor_schema_sha256":
-            _sha256_file(schema_path),
-
-        "decision_table_sha256":
-            _sha256_file(decision_table_path),
-
-        "registered_pages":
-            int(decision_table["page"].nunique()),
-
-        "registered_coordinates":
-            int(len(decision_table)),
-
-        "unseen_page_inference":
-            False,
-
-        "requires_external_decisions":
-            True,
-
-        "clean_truth_used":
-            False,
-    }
-
-    return OperatorContext(
-        bundle_root=root,
-        notebook50_run=notebook50_run,
-        policy_id=str(policy["policy_id"]),
-        policy_manifest_path=policy_path,
-        predictor_schema_path=schema_path,
-        decision_table_path=decision_table_path,
-        policy=policy,
-        schema=schema,
-        decision_table=decision_table,
-        audit=audit,
-    )
-
-
-def prepare_mask(seed: np.ndarray, dilation: int = 2) -> np.ndarray:
-    mask = _binary(seed)
-    _require(mask.ndim == 2, "Authoritative seed mask must be 2-D.")
-    _require(dilation >= 0, "mask_dilation must be non-negative.")
-    if dilation:
-        kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE,
-            (2 * dilation + 1, 2 * dilation + 1),
-        )
-        mask = cv2.dilate(mask, kernel)
-    return mask
-
-
-def _padded_components(mask: np.ndarray, margin: int) -> list[tuple[int, int, int, int]]:
-    n, _, stats, _ = cv2.connectedComponentsWithStats((mask > 0).astype(np.uint8), 8)
-    height, width = mask.shape
-    boxes: list[tuple[int, int, int, int]] = []
-    for component in range(1, n):
-        x, y, box_width, box_height, area = stats[component]
-        if int(area) >= 8:
-            boxes.append((
-                max(0, int(x) - margin),
-                max(0, int(y) - margin),
-                min(width, int(x + box_width) + margin),
-                min(height, int(y + box_height) + margin),
-            ))
-    changed = True
-    while changed:
-        changed = False
-        merged: list[tuple[int, int, int, int]] = []
-        while boxes:
-            ax0, ay0, ax1, ay1 = boxes.pop()
-            rest = []
-            for bx0, by0, bx1, by1 in boxes:
-                if not (ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0):
-                    ax0, ay0 = min(ax0, bx0), min(ay0, by0)
-                    ax1, ay1 = max(ax1, bx1), max(ay1, by1)
-                    changed = True
-                else:
-                    rest.append((bx0, by0, bx1, by1))
-            boxes = rest
-            merged.append((ax0, ay0, ax1, ay1))
-        boxes = merged
-    return boxes
-
-
-def _telea(observed: np.ndarray, mask: np.ndarray, margin: int) -> np.ndarray:
-    result = observed.copy()
-    for x0, y0, x1, y1 in _padded_components(mask, margin):
-        image_crop = observed[y0:y1, x0:x1]
-        mask_crop = mask[y0:y1, x0:x1]
-        candidate = cv2.inpaint(image_crop, mask_crop, 3, cv2.INPAINT_TELEA)
-        local = result[y0:y1, x0:x1]
-        local[mask_crop > 0] = candidate[mask_crop > 0]
-        result[y0:y1, x0:x1] = local
-    return _immutable(observed, result, mask)
-
-
-def _background_surface(observed: np.ndarray, mask_bool: np.ndarray, sigma: float = 45.0) -> np.ndarray:
-    visible = (~mask_bool) & (observed >= 200)
-    numerator = cv2.GaussianBlur(observed.astype(np.float32) * visible, (0, 0), sigma)
-    denominator = cv2.GaussianBlur(visible.astype(np.float32), (0, 0), sigma)
-    fallback = cv2.GaussianBlur(observed, (0, 0), sigma)
-    return np.clip(
-        np.where(denominator > .02, numerator / np.maximum(denominator, 1e-4), fallback),
-        0,
-        255,
-    ).astype(np.uint8)
-
-
-def _support_maps(observed: np.ndarray, mask: np.ndarray, band: int = 4):
-    dark = (observed < 190) & (mask == 0)
-    horizontal = cv2.morphologyEx(
-        dark.astype(np.uint8) * 255,
-        cv2.MORPH_OPEN,
-        np.ones((1, 35), np.uint8),
-    ) > 0
-    vertical = cv2.morphologyEx(
-        dark.astype(np.uint8) * 255,
-        cv2.MORPH_OPEN,
-        np.ones((15, 1), np.uint8),
-    ) > 0
-    n, labels, stats, _ = cv2.connectedComponentsWithStats(dark.astype(np.uint8), 8)
-    compact = np.zeros_like(dark)
-    for component in range(1, n):
-        x, y, width, height, area = stats[component]
-        if 3 <= area <= 650 and width <= 40 and height <= 40:
-            compact[labels == component] = True
-    kernel = np.ones((2 * band + 1, 2 * band + 1), np.uint8)
-    return (
-        cv2.dilate(horizontal.astype(np.uint8), kernel) > 0,
-        cv2.dilate(vertical.astype(np.uint8), kernel) > 0,
-        cv2.dilate(compact.astype(np.uint8), kernel) > 0,
-    )
-
-
-def _v78_arrays(observed: np.ndarray, mask: np.ndarray, crop_margin: int):
-    mask_bool = mask > 0
-    telea = _telea(observed, mask, crop_margin)
-    paper = _background_surface(observed, mask_bool)
-    normalised = cv2.divide(observed, np.maximum(paper, 1), scale=255)
-    horizontal, vertical, compact = _support_maps(observed, mask)
-    preserve = mask_bool & (horizontal | vertical | compact) & (observed < 200)
-    remove = mask_bool & ~preserve & (observed >= 80) & (normalised >= 80)
-    ambiguous = mask_bool & ~preserve & ~remove
-    baseline = observed.copy()
-    baseline[remove] = paper[remove]
-    baseline[ambiguous] = telea[ambiguous]
-    baseline[preserve] = observed[preserve]
-    baseline = _immutable(observed, baseline, mask)
-    return {
-        "obs": observed,
-        "norm": normalised,
-        "mask": mask_bool,
-        "depth": cv2.distanceTransform(mask_bool.astype(np.uint8), cv2.DIST_L2, 5),
-        "horizontal": horizontal,
-        "vertical": vertical,
-        "compact": compact,
-        "preserve": preserve,
-        "remove": remove,
-        "ambiguous": ambiguous,
-        "edge": cv2.Canny(observed, 70, 170) > 0,
-        "baseline": baseline,
-    }
-
-
-def _build_padded_channels(arrays: Mapping[str, np.ndarray], channels: Sequence[str], half: int):
-    padded = {}
-    for key in channels:
-        value = arrays[key].astype(np.float32)
-        if key in {"obs", "norm"}:
-            value /= 255.0
-        padded[key] = np.pad(value, half, mode="reflect")
-    return padded
-
-
-def _score(
-    operator: OperatorContext,
-    arrays: Mapping[str, np.ndarray],
-    ys: np.ndarray,
-    xs: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    half = operator.patch // 2
-    padded = _build_padded_channels(arrays, operator.channels, half)
-    raw = np.empty(len(ys), dtype=np.float64)
-    operator.model.eval()
-    with torch.no_grad():
-        for start in range(0, len(ys), operator.batch_size):
-            stop = min(start + operator.batch_size, len(ys))
-            batch = np.stack([
-                np.stack([
-                    padded[key][int(y):int(y) + operator.patch,
-                                int(x):int(x) + operator.patch]
-                    for key in operator.channels
-                ])
-                for y, x in zip(ys[start:stop], xs[start:stop])
-            ]).astype(np.float32)
-            tensor = torch.from_numpy(batch).to(operator.device)
-            logits = operator.model(tensor)
-            raw[start:stop] = torch.softmax(logits, 1)[:, 1].cpu().numpy()
-    calibrated = np.asarray(operator.calibrator.predict(raw), dtype=np.float64)
-    _require(np.isfinite(raw).all(), "Non-finite raw PRINT score.")
-    _require(np.isfinite(calibrated).all(), "Non-finite calibrated PRINT probability.")
-    _require(((calibrated >= 0) & (calibrated <= 1)).all(),
-             "Calibrated PRINT probability outside [0, 1].")
-    return raw, calibrated
-
-
-def _decide(operator: OperatorContext, p_print: np.ndarray) -> np.ndarray:
-    p_annotation = 1.0 - p_print
-    decision = np.full(len(p_print), DECISION_UNCERTAIN, np.uint8)
-    decision[p_annotation >= operator.annotation_threshold] = DECISION_ANNOTATION
-    print_rule = (
-        (p_print >= operator.print_threshold)
-        & ((p_print - p_annotation) >= operator.print_margin)
-    )
-    decision[print_rule] = DECISION_PRINT
-    return decision
-
-
-def _apply_run_rule(
-    shape: tuple[int, int],
-    ys: np.ndarray,
-    xs: np.ndarray,
-    decisions: np.ndarray,
-    minimum_run: int,
-) -> int:
-    if minimum_run <= 1:
-        return 0
-    print_map = np.zeros(shape, np.uint8)
-    selected = decisions == DECISION_PRINT
-    print_map[ys[selected], xs[selected]] = 1
-    n, labels, stats, _ = cv2.connectedComponentsWithStats(print_map, 8)
-    demoted = 0
-    for component in range(1, n):
-        if int(stats[component, cv2.CC_STAT_AREA]) < minimum_run:
-            component_map = labels == component
-            hit = selected & component_map[ys, xs]
-            decisions[hit] = DECISION_UNCERTAIN
-            demoted += int(hit.sum())
-    return demoted
-
-
-def run_page(
-    observed: np.ndarray,
-    authoritative_seed_mask: np.ndarray,
-    runtime_context: OperatorContext,
-    page_context: Optional[Mapping[str, Any]] = None,
-) -> PageResult:
-    """Infer V8.8 decisions for one previously unseen reviewed page."""
-    started = time.perf_counter()
-    _require(isinstance(runtime_context, OperatorContext),
-             "runtime_context must be returned by load_operator().")
-    operator = runtime_context
-    context = dict(page_context or {})
-
-    observed = np.asarray(observed)
-    seed = np.asarray(authoritative_seed_mask)
-    _require(observed.ndim == 2 and observed.dtype == np.uint8,
-             "observed must be a 2-D uint8 array.")
-    _require(seed.ndim == 2 and seed.shape == observed.shape,
-             "authoritative_seed_mask must be 2-D and match observed shape.")
-
-    prepared = prepare_mask(seed, operator.mask_dilation)
-    arrays = _v78_arrays(observed, prepared, operator.crop_margin)
-    baseline = arrays["baseline"]
-    eligible = (prepared > 0) & (observed < operator.dark_threshold) & ~arrays["preserve"]
-    ys, xs = np.where(eligible)
-
-    raw_map = np.full(observed.shape, np.nan, np.float32)
-    print_map = np.full(observed.shape, np.nan, np.float32)
-    annotation_map = np.full(observed.shape, np.nan, np.float32)
-    decisions = np.full(observed.shape, DECISION_INELIGIBLE, np.uint8)
-
-    if len(ys):
-        raw, p_print = _score(operator, arrays, ys, xs)
-        local_decisions = _decide(operator, p_print)
-        demoted = _apply_run_rule(
-            observed.shape, ys, xs, local_decisions, operator.minimum_print_run
-        )
-        raw_map[ys, xs] = raw.astype(np.float32)
-        print_map[ys, xs] = p_print.astype(np.float32)
-        annotation_map[ys, xs] = (1.0 - p_print).astype(np.float32)
-        decisions[ys, xs] = local_decisions
-    else:
-        demoted = 0
-
-    print_mask = decisions == DECISION_PRINT
-    annotation_mask = decisions == DECISION_ANNOTATION
-    uncertain_mask = decisions == DECISION_UNCERTAIN
-
-    corrected = baseline.copy()
-    corrected[print_mask] = observed[print_mask]
-    corrected[prepared == 0] = observed[prepared == 0]
-
-    outside_drift = int(np.sum(corrected[prepared == 0] != observed[prepared == 0]))
-    nonprint_regression = int(np.sum(corrected[~print_mask] != baseline[~print_mask]))
-    changed_not_observed = int(np.sum((corrected != baseline) & (corrected != observed)))
-    _require(outside_drift == 0, "Outside-mask drift detected.")
-    _require(nonprint_regression == 0, "Non-PRINT regression from frozen V7.8 detected.")
-    _require(changed_not_observed == 0,
-             "A V8.8-changed pixel does not equal the observed input byte.")
-
-    changed_from_observed = corrected != observed
-    changed_from_baseline = corrected != baseline
-    audit = {
-        **dict(operator.audit),
-        **context,
-        "clean_truth_used": False,
-        "observed_sha256": _sha256_array(observed),
-        "seed_mask_sha256": _sha256_array(_binary(seed)),
-        "prepared_mask_sha256": _sha256_array(prepared),
-        "baseline_sha256": _sha256_array(baseline),
-        "corrected_sha256": _sha256_array(corrected),
-        "decisions_sha256": _sha256_array(decisions),
-        "eligible_pixels": int(eligible.sum()),
-        "print_pixels": int(print_mask.sum()),
-        "annotation_pixels": int(annotation_mask.sum()),
-        "uncertain_pixels": int(uncertain_mask.sum()),
-        "singleton_or_short_run_demotions": int(demoted),
-        "outside_mask_drift": outside_drift,
-        "nonprint_v78_regression": nonprint_regression,
-        "changed_not_equal_observed": changed_not_observed,
-        "elapsed_seconds": time.perf_counter() - started,
-        "python": sys.version,
-        "platform": platform.platform(),
-        "numpy": np.__version__,
-        "opencv": cv2.__version__,
-        "torch": torch.__version__,
-        "device": operator.device,
-    }
-
-    return PageResult(
-        corrected=corrected,
-        baseline=baseline,
-        prepared_mask=prepared,
-        decisions=decisions,
-        probabilities={
-            "raw_print": raw_map,
-            "p_print": print_map,
-            "p_annotation": annotation_map,
-        },
-        changed={
-            "from_observed": changed_from_observed,
-            "from_baseline": changed_from_baseline,
-            "valid_intervention": prepared > 0,
-        },
-        audit=audit,
-        print_mask=print_mask,
-        annotation_mask=annotation_mask,
-        uncertain_mask=uncertain_mask,
-        eligible_mask=eligible,
-    )
-
-
-def replay_page(operator: OperatorContext, bundle_root: Any = None) -> dict[str, Any]:
-    """Run the exact frozen replay pack and verify semantic hashes."""
-    _require(isinstance(operator, OperatorContext),
-             "operator must be returned by load_operator().")
-    if bundle_root is not None:
-        supplied = Path(bundle_root).expanduser().resolve()
-        _require(supplied == operator.bundle_root,
-                 "replay bundle_root differs from the loaded operator bundle.")
-
-    try:
-        with np.load(operator.replay_path, allow_pickle=False) as replay:
-            required = {
-                "observed", "authoritative_seed_mask", "corrected_sha256",
-                "baseline_sha256", "decisions_sha256", "prepared_mask_sha256",
-            }
-            missing = sorted(required - set(replay.files))
-            _require(not missing, f"Replay pack missing arrays/fields: {missing}")
-            observed = replay["observed"]
-            seed = replay["authoritative_seed_mask"]
-            expected = {
-                "corrected_sha256": str(replay["corrected_sha256"].item()),
-                "baseline_sha256": str(replay["baseline_sha256"].item()),
-                "decisions_sha256": str(replay["decisions_sha256"].item()),
-                "prepared_mask_sha256": str(replay["prepared_mask_sha256"].item()),
-            }
-
-        first = run_page(observed, seed, operator, {"replay": True})
-        second = run_page(observed, seed, operator, {"replay": True})
-        actual = {
-            "corrected_sha256": _sha256_array(first.corrected),
-            "baseline_sha256": _sha256_array(first.baseline),
-            "decisions_sha256": _sha256_array(first.decisions),
-            "prepared_mask_sha256": _sha256_array(first.prepared_mask),
-        }
-        deterministic = (
-            np.array_equal(first.corrected, second.corrected)
-            and np.array_equal(first.baseline, second.baseline)
-            and np.array_equal(first.decisions, second.decisions)
-            and np.array_equal(first.prepared_mask, second.prepared_mask)
-        )
-        mismatches = {
-            key: {"expected": expected[key], "actual": actual[key]}
-            for key in expected
-            if expected[key] != actual[key]
-        }
-        return {
-            "passed": bool(deterministic and not mismatches),
-            "operator_id": operator.audit["operator_id"],
-            "policy_id": operator.audit["policy_id"],
-            "implementation_id": operator.audit["implementation_id"],
-            "deterministic": bool(deterministic),
-            "expected": expected,
-            "actual": actual,
-            "mismatches": mismatches,
-        }
-    except Exception as exc:
-        return {
-            "passed": False,
-            "operator_id": operator.audit.get("operator_id"),
-            "policy_id": operator.audit.get("policy_id"),
-            "error_type": type(exc).__name__,
-            "error": str(exc),
-        }
-
-
-__all__ = [
-    "OPERATOR_ID",
-    "OPERATOR_VERSION",
-    "OperatorContext",
-    "PageResult",
-    "TopologyCNN",
-    "load_operator",
-    "replay_page",
-    "run_page",
-    "prepare_mask",
-]
+    observed: np.ndarray
+    authoritative_mask: np.ndarray
+    baseline_v78: np.ndarray
+    m3_mask: np.ndarray
+    m5_remove_mask: np.ndarray
+    safe_remove_mask: np.ndarray
+    p_print: np.ndarray
+    p_remove: np.ndarray
+    reason_map: np.ndarray
+    features: pd.DataFrame
+    audit: Dict[str,Any]
+
+class V88Operator:
+    def __init__(self,p_print_bundle: Path,remove_bundle: Path,device: Optional[str]=None):
+        self.p_root=Path(p_print_bundle); self.r_root=Path(remove_bundle); self.device=device or ('cuda' if torch.cuda.is_available() else 'cpu'); self.capabilities=OperatorCapabilities()
+        pm=_read_json(self.p_root/'bundle_manifest.json'); pp=_read_json(self.p_root/'provider_policy.json'); rm=_read_json(self.r_root/'bundle_manifest.json'); rp=_read_json(self.r_root/'policy.json'); rs=_read_json(self.r_root/'predictor_schema.json')
+        _verify(self.p_root/pm['model'],pm.get('model_sha256'),'p_print model'); _verify(self.p_root/pm['calibrator'],pm.get('calibrator_sha256'),'p_print calibrator'); _verify(self.p_root/'channel_schema.json',pm.get('channel_schema_sha256'),'channel schema'); _verify(self.p_root/'p_print_provider.py',pm.get('provider_source_sha256'),'p_print provider source')
+        _verify(self.r_root/rm['estimator'],rm.get('estimator_sha256'),'REMOVE estimator'); _verify(self.r_root/rm['calibrator'],rm.get('calibrator_sha256'),'REMOVE calibrator'); _verify(self.r_root/rm['predictor_schema'],rm.get('predictor_schema_sha256'),'REMOVE schema'); _verify(self.r_root/rm['policy'],rm.get('policy_sha256'),'REMOVE policy')
+        channels=_read_json(self.p_root/'channel_schema.json').get('channels'); predictors=rs.get('ordered_predictors')
+        _require(channels==EXPECTED_CHANNELS,'Unexpected p_print channel order.'); _require(predictors==EXPECTED_PREDICTORS,'Unexpected REMOVE predictor order.'); _require(pp.get('clean_truth_required_at_inference') is False,'p_print provider is not truth-free.'); _require(rp.get('clean_truth_required_at_inference') is False,'REMOVE provider is not truth-free.'); _require(rp.get('safe_protect_runtime_enabled') is False,'SAFE_PROTECT must remain disabled.')
+        self.p_manifest=pm; self.p_policy=pp; self.r_manifest=rm; self.r_policy=rp; self.predictors=predictors
+        module=_load_module(self.p_root/'p_print_provider.py'); self.p_model=module.TopologyCNN().to(self.device); state=torch.load(self.p_root/pm['model'],map_location=self.device); self.p_model.load_state_dict(state,strict=True); self.p_model.eval(); self.p_cal=joblib.load(self.p_root/pm['calibrator']); self.r_model=joblib.load(self.r_root/rm['estimator']); self.r_cal=joblib.load(self.r_root/rm['calibrator'])
+        self.bundle_id=hashlib.sha256((pm['bundle_id']+'|'+rm['bundle_id']).encode()).hexdigest()
+    def _score_p_print(self,observed,mask,routes,ys,xs):
+        arrays={'obs':observed,'norm':routes['normalised'],'mask':mask>0,'depth':cv2.distanceTransform((mask>0).astype(np.uint8),cv2.DIST_L2,5),'horizontal':routes['horizontal'],'vertical':routes['vertical'],'compact':routes['compact'],'preserve':routes['preserve'],'remove':routes['remove'],'ambiguous':routes['ambiguous'],'edge':cv2.Canny(observed,70,170)>0}
+        padded={}
+        for k in EXPECTED_CHANNELS:
+            a=np.asarray(arrays[k],dtype=np.float32)
+            if k in ('obs','norm'): a/=255.0
+            padded[k]=np.pad(a,16,mode='reflect')
+        out=[]
+        with torch.no_grad():
+            for s in range(0,len(ys),P_PRINT_BATCH):
+                batch=np.stack([np.stack([padded[k][int(y):int(y)+33,int(x):int(x)+33] for k in EXPECTED_CHANNELS]) for y,x in zip(ys[s:s+P_PRINT_BATCH],xs[s:s+P_PRINT_BATCH])]).astype(np.float32)
+                out.extend(torch.softmax(self.p_model(torch.from_numpy(batch).to(self.device)),1)[:,1].cpu().numpy())
+        raw=np.asarray(out,np.float64); return raw,np.asarray(self.p_cal.predict(raw),np.float64)
+    def _build_features(self,page,observed,m3,protected,routes,p_print):
+        ys,xs=np.where(m3); edge=cv2.Canny(observed,70,170)>0; depth=cv2.distanceTransform(m3.astype(np.uint8),cv2.DIST_L2,5); boundary=m3&~cv2.erode(m3.astype(np.uint8),np.ones((3,3),np.uint8)).astype(bool); local={k:frac(routes[k]) for k in ['preserve','remove','ambiguous','horizontal','vertical','compact']}; local['edge']=frac(edge); local['dark']=frac(observed<200); _,labels,_,_=cv2.connectedComponentsWithStats(m3.astype(np.uint8),8)
+        return pd.DataFrame({'page':page,'y':ys,'x':xs,'observed_value':observed[ys,xs],'normalised_value':routes['normalised'][ys,xs],'paper_value':routes['paper'][ys,xs],'mask_depth':depth[ys,xs],'boundary_distance':dist_to(boundary)[ys,xs],'distance_to_protected':dist_to(protected)[ys,xs],'edge':edge[ys,xs].astype(np.uint8),'local_edge_fraction':local['edge'][ys,xs],'local_dark_fraction':local['dark'][ys,xs],'local_preserve_fraction':local['preserve'][ys,xs],'local_remove_fraction':local['remove'][ys,xs],'local_ambiguous_fraction':local['ambiguous'][ys,xs],'local_horizontal_fraction':local['horizontal'][ys,xs],'local_vertical_fraction':local['vertical'][ys,xs],'local_compact_fraction':local['compact'][ys,xs],'p_print':p_print[ys,xs],'component_id':labels[ys,xs].astype(int)})
+    def _safe_remove(self,features):
+        p=features.p_remove.to_numpy(float); candidate=p>=float(self.r_policy['remove_probability_threshold']); h=int(features.y.max())+1; w=int(features.x.max())+1; mask=np.zeros((h,w),np.uint8); mask[features.y.to_numpy(int)[candidate],features.x.to_numpy(int)[candidate]]=1; n,lab,stats,_=cv2.connectedComponentsWithStats(mask,int(self.r_policy['connectivity'])); selected=np.zeros(len(features),bool); lookup={(int(r.y),int(r.x)):i for i,r in features[['y','x']].iterrows()}
+        for cid in range(1,n):
+            yy,xx=np.where(lab==cid); ids=[lookup[(int(y),int(x))] for y,x in zip(yy,xx) if (int(y),int(x)) in lookup]
+            if not ids: continue
+            q=p[ids]
+            if len(ids)>=int(self.r_policy['minimum_remove_run']) and float(q.mean())>=float(self.r_policy['remove_region_minimum_mean_probability']) and float((q>=float(self.r_policy['remove_probability_threshold'])).mean())>=float(self.r_policy['remove_region_minimum_pixel_fraction_above_threshold']): selected[ids]=True
+        return selected
+    def run_page(self,observed,authoritative_seed_mask,page='page')->PageResult:
+        observed=np.asarray(observed); seed=np.asarray(authoritative_seed_mask); _require(observed.ndim==2 and observed.dtype==np.uint8,'Observed page must be 2D uint8 grayscale.'); _require(seed.shape==observed.shape,'Observed and seed-mask shapes differ.'); mask=prepare_mask(seed); telea=telea_reconstruct(observed,mask); baseline,routes=geometry_t80(observed,mask,telea)
+        elig=(mask>0)&(observed<200)&~routes['preserve']; eys,exs=np.where(elig); p_print=np.full(observed.shape,np.nan,np.float64)
+        if len(eys): _,pp=self._score_p_print(observed,mask,routes,eys,exs); p_print[eys,exs]=pp
+        # Strict V8.2 PRINT protection is part of the protected evidence used by Notebook 49.
+        strict_print=np.zeros(observed.shape,bool)
+        if len(eys):
+            provisional=pp>=.995; pm=np.zeros(observed.shape,np.uint8); pm[eys[provisional],exs[provisional]]=1; n,lab,stats,_=cv2.connectedComponentsWithStats(pm,8)
+            for cid in range(1,n):
+                if stats[cid,cv2.CC_STAT_AREA]>=2: strict_print|=lab==cid
+        protected=routes['preserve']|strict_print
+        # M3 is the incumbent pixels eligible for REMOVE reconsideration: inside authority and not already protected.
+        m3=(mask>0)&~protected
+        features=self._build_features(page,observed,m3,protected,routes,p_print)
+        _require(len(features)>0,'No M3 candidate pixels.')
+        X=features[self.predictors].apply(pd.to_numeric,errors='coerce').replace([np.inf,-np.inf],np.nan); raw_remove=self.r_model.predict_proba(X)[:,1]; p_remove_rows=np.asarray(self.r_cal.predict(raw_remove),np.float64); features['raw_remove_score']=raw_remove; features['p_remove']=p_remove_rows; selected=self._safe_remove(features); features['safe_remove']=selected
+        safe=np.zeros(observed.shape,bool); safe[features.y.to_numpy(int)[selected],features.x.to_numpy(int)[selected]]=True; m5_remove=m3&~safe
+        # Frozen fallback: baseline V7.8 everywhere; SAFE_REMOVE means accept incumbent removal, non-SAFE M3 falls back unchanged.
+        corrected=observed.copy(); corrected[safe]=baseline[safe]
+        _require(np.array_equal(corrected[mask==0],observed[mask==0]),'Outside-mask drift.'); _require(np.array_equal(corrected[~safe],observed[~safe]),'Non-SAFE pixel changed.')
+        p_remove=np.full(observed.shape,np.nan,np.float64); p_remove[features.y.to_numpy(int),features.x.to_numpy(int)]=p_remove_rows; reason=np.zeros(observed.shape,np.uint8); reason[routes['preserve']]=1; reason[strict_print]=2; reason[m3&~safe]=3; reason[safe]=4
+        audit={'page':page,'operator_bundle_id':self.bundle_id,'p_print_bundle_id':self.p_manifest['bundle_id'],'remove_bundle_id':self.r_manifest['bundle_id'],'authoritative_mask_pixels':int((mask>0).sum()),'p_print_eligible_pixels':int(len(eys)),'strict_print_pixels':int(strict_print.sum()),'m3_pixels':int(m3.sum()),'safe_remove_pixels':int(safe.sum()),'m5_remove_pixels':int(m5_remove.sum()),'outside_mask_drift':int(np.sum(corrected[mask==0]!=observed[mask==0])),'uses_clean_truth':False,'software':{'python':sys.version,'opencv':cv2.__version__,'numpy':np.__version__,'pandas':pd.__version__,'torch':torch.__version__,'platform':platform.platform()}}
+        return PageResult(corrected,observed.copy(),mask>0,baseline,m3,m5_remove,safe,p_print,p_remove,reason,features,audit)
+
+def load_operator(p_print_bundle_root,remove_bundle_root,device=None): return V88Operator(Path(p_print_bundle_root),Path(remove_bundle_root),device=device)
+def run_page(observed,authoritative_seed_mask,operator:V88Operator,page='page'): return operator.run_page(observed,authoritative_seed_mask,page=page)
