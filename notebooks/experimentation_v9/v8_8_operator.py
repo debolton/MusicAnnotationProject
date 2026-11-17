@@ -165,11 +165,23 @@ class V88Operator:
         _require(len(features)>0,'No M3 candidate pixels.')
         X=features[self.predictors].apply(pd.to_numeric,errors='coerce').replace([np.inf,-np.inf],np.nan); raw_remove=self.r_model.predict_proba(X)[:,1]; p_remove_rows=np.asarray(self.r_cal.predict(raw_remove),np.float64); features['raw_remove_score']=raw_remove; features['p_remove']=p_remove_rows; selected=self._safe_remove(features); features['safe_remove']=selected
         safe=np.zeros(observed.shape,bool); safe[features.y.to_numpy(int)[selected],features.x.to_numpy(int)[selected]]=True; m5_remove=m3&~safe
-        # Frozen fallback: baseline V7.8 everywhere; SAFE_REMOVE means accept incumbent removal, non-SAFE M3 falls back unchanged.
-        corrected=observed.copy(); corrected[safe]=baseline[safe]
-        _require(np.array_equal(corrected[mask==0],observed[mask==0]),'Outside-mask drift.'); _require(np.array_equal(corrected[~safe],observed[~safe]),'Non-SAFE pixel changed.')
+        # Historical V8.8 assembly contract (Notebook 53 lineage):
+        #   1. M5_REMOVE = M3 & ~SAFE_REMOVE
+        #   2. reconstruct the residual M5_REMOVE mask from the observed page with Telea
+        #   3. replace SAFE_REMOVE pixels with the frozen local paper estimate
+        #   4. retain observed bytes everywhere outside M3
+        #
+        # Do not substitute baseline[safe] here. SAFE_REMOVE has an explicit paper
+        # treatment, while the complementary M5_REMOVE region must be reconstructed.
+        reconstructed_m5=telea_reconstruct(observed,binary(m5_remove))
+        corrected=reconstructed_m5.copy()
+        corrected[safe]=routes['paper'][safe]
+        _require(np.array_equal(corrected[~m3],observed[~m3]),'Outside-M3 drift.')
+        _require(np.array_equal(corrected[mask==0],observed[mask==0]),'Outside-mask drift.')
+        _require(np.array_equal(corrected[safe],routes['paper'][safe]),'SAFE_REMOVE paper-treatment mismatch.')
+        _require(np.array_equal(corrected[m5_remove],reconstructed_m5[m5_remove]),'M5_REMOVE reconstruction mismatch.')
         p_remove=np.full(observed.shape,np.nan,np.float64); p_remove[features.y.to_numpy(int),features.x.to_numpy(int)]=p_remove_rows; reason=np.zeros(observed.shape,np.uint8); reason[routes['preserve']]=1; reason[strict_print]=2; reason[m3&~safe]=3; reason[safe]=4
-        audit={'page':page,'operator_bundle_id':self.bundle_id,'p_print_bundle_id':self.p_manifest['bundle_id'],'remove_bundle_id':self.r_manifest['bundle_id'],'authoritative_mask_pixels':int((mask>0).sum()),'p_print_eligible_pixels':int(len(eys)),'strict_print_pixels':int(strict_print.sum()),'m3_pixels':int(m3.sum()),'safe_remove_pixels':int(safe.sum()),'m5_remove_pixels':int(m5_remove.sum()),'outside_mask_drift':int(np.sum(corrected[mask==0]!=observed[mask==0])),'uses_clean_truth':False,'software':{'python':sys.version,'opencv':cv2.__version__,'numpy':np.__version__,'pandas':pd.__version__,'torch':torch.__version__,'platform':platform.platform()}}
+        audit={'page':page,'operator_bundle_id':self.bundle_id,'p_print_bundle_id':self.p_manifest['bundle_id'],'remove_bundle_id':self.r_manifest['bundle_id'],'authoritative_mask_pixels':int((mask>0).sum()),'p_print_eligible_pixels':int(len(eys)),'strict_print_pixels':int(strict_print.sum()),'m3_pixels':int(m3.sum()),'safe_remove_pixels':int(safe.sum()),'m5_remove_pixels':int(m5_remove.sum()),'assembly_contract':'historical_m5_telea_then_safe_remove_paper','m5_reconstructed_pixels':int(np.sum(reconstructed_m5[m5_remove]!=observed[m5_remove])),'safe_remove_paper_pixels':int(np.sum(corrected[safe]!=observed[safe])),'outside_m3_drift':int(np.sum(corrected[~m3]!=observed[~m3])),'outside_mask_drift':int(np.sum(corrected[mask==0]!=observed[mask==0])),'uses_clean_truth':False,'software':{'python':sys.version,'opencv':cv2.__version__,'numpy':np.__version__,'pandas':pd.__version__,'torch':torch.__version__,'platform':platform.platform()}}
         return PageResult(corrected,observed.copy(),mask>0,baseline,m3,m5_remove,safe,p_print,p_remove,reason,features,audit)
 
 def load_operator(p_print_bundle_root,remove_bundle_root,device=None): return V88Operator(Path(p_print_bundle_root),Path(remove_bundle_root),device=device)
