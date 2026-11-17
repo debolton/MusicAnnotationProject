@@ -234,129 +234,215 @@ class PageResult:
     eligible_mask: np.ndarray
 
 
-def _find_manifest(root: Path) -> Path:
-    candidates = [
-        root / "operator_bundle.json",
-        root / "policy_bundle" / "operator_bundle.json",
-    ]
-    hits = [path for path in candidates if path.is_file()]
-    _require(
-        len(hits) == 1,
-        "v88_bundle_root must contain exactly one operator_bundle.json at "
-        "the root or under policy_bundle/. A Notebook 52 run containing only "
-        "Notebook 50 OOF decisions is not a deployable unseen-page operator. "
-        f"Checked: {[str(path) for path in candidates]}",
-    )
-    return hits[0]
+def load_operator(
+    v88_bundle_root: Any,
+) -> OperatorContext:
+    """
+    Load the completed Notebook 52 V8.8A freeze and its authoritative
+    Notebook 50 registered-decision source.
 
-
-def load_operator(v88_bundle_root: Any, **overrides: Any) -> OperatorContext:
-    """Load and verify the frozen deployable V8.8 operator bundle."""
-    _require(torch is not None, f"PyTorch could not be imported: {_TORCH_IMPORT_ERROR}")
+    This loader supports registered replay. It does not claim that an
+    all-development deployable scorer for previously unseen pages exists.
+    """
 
     root = Path(v88_bundle_root).expanduser().resolve()
-    _require(root.is_dir(),
-             f"v88_bundle_root must be a directory, not a file: {root}")
-    manifest_path = _find_manifest(root)
-    manifest = _read_json(manifest_path)
-    artefact_root = manifest_path.parent
 
-    required_top = {
-        "operator_id", "policy_id", "implementation_id", "architecture",
-        "model", "calibrator", "channel_schema", "policy", "replay",
-    }
-    missing = sorted(required_top - set(manifest))
-    _require(not missing, f"operator_bundle.json missing fields: {missing}")
-    _require(manifest["architecture"] == "topology_cnn_v8_2",
-             f"Unsupported frozen architecture: {manifest['architecture']!r}")
+    _require(
+        root.is_dir(),
+        f"v88_bundle_root must be a Notebook 52 run directory: {root}",
+    )
 
-    model_path = _resolve_file(artefact_root, manifest["model"], "model")
-    calibrator_path = _resolve_file(artefact_root, manifest["calibrator"], "calibrator")
-    schema_path = _resolve_file(artefact_root, manifest["channel_schema"], "channel_schema")
-    policy_path = _resolve_file(artefact_root, manifest["policy"], "policy")
-    replay_path = _resolve_file(artefact_root, manifest["replay"], "replay")
+    verdict_path = root / "notebook52_verdict.json"
+    policy_path = root / "policy_bundle" / "policy_manifest.json"
+
+    _require(
+        verdict_path.is_file(),
+        f"Missing Notebook 52 verdict: {verdict_path}",
+    )
+
+    _require(
+        policy_path.is_file(),
+        f"Missing Notebook 52 policy manifest: {policy_path}",
+    )
+
+    verdict = _read_json(verdict_path)
+    policy = _read_json(policy_path)
+
+    _require(
+        verdict.get("verdict")
+        == "PASS_M5_REMOVE_FREEZE_READY_FOR_OPERATIONAL_BUILDER",
+        f"Notebook 52 did not pass its operational-builder gate: {verdict}",
+    )
+
+    _require(
+        policy.get("policy") == "M5_REMOVE",
+        f"Frozen policy is not M5_REMOVE: {policy.get('policy')!r}",
+    )
+
+    _require(
+        policy.get("safe_protect_runtime_enabled") is False,
+        "SAFE_PROTECT must remain disabled.",
+    )
+
+    _require(
+        policy.get("retraining_performed") is False,
+        "Notebook 52 records unexpected retraining.",
+    )
+
+    _require(
+        policy.get("recalibration_performed") is False,
+        "Notebook 52 records unexpected recalibration.",
+    )
+
+    _require(
+        policy.get("threshold_changed") is False,
+        "Notebook 52 records an unexpected threshold change.",
+    )
+
+    notebook50_raw = policy.get("authoritative_notebook50_run")
+
+    _require(
+        notebook50_raw,
+        "Policy manifest does not identify authoritative_notebook50_run.",
+    )
+
+    notebook50_run = Path(
+        notebook50_raw
+    ).expanduser().resolve()
+
+    _require(
+        notebook50_run.is_dir(),
+        "Authoritative Notebook 50 run does not exist: "
+        f"{notebook50_run}",
+    )
+
+    schema_path = (
+        notebook50_run
+        / "inputs"
+        / "predictor_schema.json"
+    )
+
+    decision_table_path = (
+        notebook50_run
+        / "tables"
+        / "all_m3_oof_predictions_and_decisions.parquet"
+    )
+
+    _require(
+        schema_path.is_file(),
+        f"Missing Notebook 50 predictor schema: {schema_path}",
+    )
+
+    _require(
+        decision_table_path.is_file(),
+        f"Missing Notebook 50 registered decision table: "
+        f"{decision_table_path}",
+    )
 
     schema = _read_json(schema_path)
-    policy = _read_json(policy_path)
-    channels = tuple(schema.get("channels", schema.get("ordered_channels", [])))
-    _require(channels, "Frozen channel schema is empty.")
-    _require(channels == DEFAULT_CHANNELS,
-             f"Frozen channel order is unsupported or mismatched: {channels}")
+    decision_table = pd.read_parquet(
+        decision_table_path
+    )
 
-    constants = dict(manifest.get("constants", {}))
-    constants.update({key: value for key, value in overrides.items() if value is not None})
-    unknown = sorted(set(constants) - {
-        "mask_dilation", "patch", "dark_threshold", "print_threshold",
-        "annotation_threshold", "print_margin", "minimum_print_run",
-        "batch_size", "crop_margin", "device",
-    })
-    _require(not unknown, f"Unknown operator constants: {unknown}")
+    required_columns = {
+        "page",
+        "y",
+        "x",
+        "safe_remove",
+    }
 
-    patch = int(constants.get("patch", schema.get("patch", 33)))
-    _require(patch == 33 and patch % 2 == 1,
-             f"Unsupported frozen patch size: {patch}")
-    device = str(constants.get("device", "cuda" if torch.cuda.is_available() else "cpu"))
-    _require(device == "cpu" or device.startswith("cuda"), f"Invalid device: {device}")
-    if device.startswith("cuda"):
-        _require(torch.cuda.is_available(), "CUDA requested but unavailable.")
+    missing_columns = (
+        required_columns
+        - set(decision_table.columns)
+    )
 
-    model = TopologyCNN(len(channels)).to(device)
-    state = torch.load(model_path, map_location=device)
-    if isinstance(state, dict) and "state_dict" in state:
-        state = state["state_dict"]
-    _require(isinstance(state, dict), "Frozen model file does not contain a state_dict.")
-    model.load_state_dict(state, strict=True)
-    model.eval()
-    calibrator = joblib.load(calibrator_path)
-    _require(hasattr(calibrator, "predict"), "Frozen calibrator lacks predict().")
+    _require(
+        not missing_columns,
+        "Notebook 50 decision table is missing fields: "
+        f"{sorted(missing_columns)}",
+    )
+
+    decision_table = decision_table.copy()
+    decision_table["page"] = (
+        decision_table["page"].astype(str)
+    )
+    decision_table["y"] = pd.to_numeric(
+        decision_table["y"],
+        errors="raise",
+    ).astype(int)
+    decision_table["x"] = pd.to_numeric(
+        decision_table["x"],
+        errors="raise",
+    ).astype(int)
+    decision_table["safe_remove"] = (
+        decision_table["safe_remove"]
+        .astype(bool)
+    )
+
+    _require(
+        not decision_table.duplicated(
+            ["page", "y", "x"]
+        ).any(),
+        "Notebook 50 decision table contains duplicate "
+        "page/y/x coordinates.",
+    )
 
     audit = {
-        "operator_id": str(manifest["operator_id"]),
-        "operator_version": OPERATOR_VERSION,
-        "policy_id": str(manifest["policy_id"]),
-        "implementation_id": str(manifest["implementation_id"]),
-        "model_id": manifest.get("model_id", manifest["model"]["sha256"]),
-        "schema_id": manifest.get("schema_id", manifest["channel_schema"]["sha256"]),
-        "model_sha256": manifest["model"]["sha256"],
-        "calibrator_sha256": manifest["calibrator"]["sha256"],
-        "channel_schema_sha256": manifest["channel_schema"]["sha256"],
-        "policy_sha256": manifest["policy"]["sha256"],
-        "replay_sha256": manifest["replay"]["sha256"],
-        "bundle_manifest_sha256": _sha256_file(manifest_path),
-        "bundle_root": str(root),
-        "architecture": str(manifest["architecture"]),
-        "unseen_page_inference": True,
-        "requires_external_decisions": False,
-        "clean_truth_used": False,
+        "operator_id":
+            "v8.8-registered-m5-remove-replay",
+
+        "operator_version":
+            OPERATOR_VERSION,
+
+        "policy_id":
+            str(policy["policy_id"]),
+
+        "notebook52_run":
+            str(root),
+
+        "notebook52_verdict_sha256":
+            _sha256_file(verdict_path),
+
+        "policy_manifest_sha256":
+            _sha256_file(policy_path),
+
+        "authoritative_notebook50_run":
+            str(notebook50_run),
+
+        "predictor_schema_sha256":
+            _sha256_file(schema_path),
+
+        "decision_table_sha256":
+            _sha256_file(decision_table_path),
+
+        "registered_pages":
+            int(decision_table["page"].nunique()),
+
+        "registered_coordinates":
+            int(len(decision_table)),
+
+        "unseen_page_inference":
+            False,
+
+        "requires_external_decisions":
+            True,
+
+        "clean_truth_used":
+            False,
     }
 
     return OperatorContext(
-        bundle_root=root,
-        bundle_manifest_path=manifest_path,
-        bundle_manifest=manifest,
+        v88_bundle_root=root,
+        notebook50_run=notebook50_run,
+        policy_id=str(policy["policy_id"]),
+        policy_manifest_path=policy_path,
+        predictor_schema_path=schema_path,
+        decision_table_path=decision_table_path,
         policy=policy,
-        channel_schema=schema,
-        model_path=model_path,
-        calibrator_path=calibrator_path,
-        policy_path=policy_path,
-        schema_path=schema_path,
-        replay_path=replay_path,
-        model=model,
-        calibrator=calibrator,
-        device=device,
-        channels=channels,
-        patch=patch,
-        mask_dilation=int(constants.get("mask_dilation", 2)),
-        dark_threshold=int(constants.get("dark_threshold", 200)),
-        print_threshold=float(constants.get("print_threshold", policy.get("print_threshold", .995))),
-        annotation_threshold=float(constants.get("annotation_threshold", policy.get("annotation_threshold", .995))),
-        print_margin=float(constants.get("print_margin", policy.get("print_margin", .990))),
-        minimum_print_run=int(constants.get("minimum_print_run", policy.get("minimum_print_run", 2))),
-        batch_size=int(constants.get("batch_size", 512)),
-        crop_margin=int(constants.get("crop_margin", 48)),
+        schema=schema,
+        decision_table=decision_table,
         audit=audit,
     )
-
 
 def prepare_mask(seed: np.ndarray, dilation: int = 2) -> np.ndarray:
     mask = _binary(seed)
