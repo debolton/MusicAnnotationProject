@@ -176,37 +176,46 @@ else:  # pragma: no cover
 @dataclass(frozen=True)
 class OperatorContext:
     bundle_root: Path
-    bundle_manifest_path: Path
-    bundle_manifest: Mapping[str, Any]
+    notebook50_run: Path
+    policy_id: str
+
+    policy_manifest_path: Path
+    predictor_schema_path: Path
+    decision_table_path: Path
+
     policy: Mapping[str, Any]
-    channel_schema: Mapping[str, Any]
-    model_path: Path
-    calibrator_path: Path
-    policy_path: Path
-    schema_path: Path
-    replay_path: Path
-    model: Any
-    calibrator: Any
-    device: str
-    channels: tuple[str, ...]
-    patch: int
-    mask_dilation: int
-    dark_threshold: int
-    print_threshold: float
-    annotation_threshold: float
-    print_margin: float
-    minimum_print_run: int
-    batch_size: int
-    crop_margin: int
+    schema: Mapping[str, Any]
+    decision_table: Any
+
     audit: Mapping[str, Any] = field(default_factory=dict)
 
     @property
-    def capabilities(self) -> dict[str, bool]:
+    def capabilities(self) -> dict[str, bool\]:
         return {
-            "unseen_page_inference": True,
-            "requires_external_decisions": False,
+            "registered_replay": True,
+            "unseen_page_inference": False,
+            "requires_external_decisions": True,
             "uses_clean_truth": False,
         }
+
+    def for_page(self, page_id: str) -> "PageOperatorContext":
+        page_id = str(page_id)
+
+        rows = self.decision_table[
+            self.decision_table["page"].astype(str) == page_id
+        ].copy()
+
+        _require(
+            not rows.empty,
+            f"Page {page_id!r} is absent from the registered "
+            "Notebook 50 decision table."
+        )
+
+        return PageOperatorContext(
+            operator=self,
+            page_id=page_id,
+            decisions=rows,
+        )
 
     def run_page(
         self,
@@ -218,6 +227,36 @@ class OperatorContext:
 
     def run_replay_test(self) -> dict[str, Any]:
         return replay_page(self, self.bundle_root)
+
+@dataclass(frozen=True)
+class PageOperatorContext:
+    operator: OperatorContext
+    page_id: str
+    decisions: Any
+
+    @property
+    def bundle_root(self) -> Path:
+        return self.operator.bundle_root
+
+    @property
+    def notebook50_run(self) -> Path:
+        return self.operator.notebook50_run
+
+    @property
+    def policy_id(self) -> str:
+        return self.operator.policy_id
+
+    @property
+    def policy(self) -> Mapping[str, Any\]:
+        return self.operator.policy
+
+    @property
+    def schema(self) -> Mapping[str, Any\]:
+        return self.operator.schema
+
+    @property
+    def audit(self) -> Mapping[str, Any\]:
+        return self.operator.audit
 
 
 @dataclass
@@ -433,7 +472,7 @@ def load_operator(
     }
 
     return OperatorContext(
-        v88_bundle_root=root,
+        bundle_root=root,
         notebook50_run=notebook50_run,
         policy_id=str(policy["policy_id"]),
         policy_manifest_path=policy_path,
@@ -444,6 +483,7 @@ def load_operator(
         decision_table=decision_table,
         audit=audit,
     )
+
 
 def prepare_mask(seed: np.ndarray, dilation: int = 2) -> np.ndarray:
     mask = _binary(seed)
