@@ -165,23 +165,34 @@ class V88Operator:
         _require(len(features)>0,'No M3 candidate pixels.')
         X=features[self.predictors].apply(pd.to_numeric,errors='coerce').replace([np.inf,-np.inf],np.nan); raw_remove=self.r_model.predict_proba(X)[:,1]; p_remove_rows=np.asarray(self.r_cal.predict(raw_remove),np.float64); features['raw_remove_score']=raw_remove; features['p_remove']=p_remove_rows; selected=self._safe_remove(features); features['safe_remove']=selected
         safe=np.zeros(observed.shape,bool); safe[features.y.to_numpy(int)[selected],features.x.to_numpy(int)[selected]]=True; m5_remove=m3&~safe
-        # Historical V8.8 assembly contract (Notebook 53 lineage):
-        #   1. M5_REMOVE = M3 & ~SAFE_REMOVE
-        #   2. reconstruct the residual M5_REMOVE mask from the observed page with Telea
-        #   3. replace SAFE_REMOVE pixels with the frozen local paper estimate
-        #   4. retain observed bytes everywhere outside M3
-        #
-        # Do not substitute baseline[safe] here. SAFE_REMOVE has an explicit paper
-        # treatment, while the complementary M5_REMOVE region must be reconstructed.
-        reconstructed_m5=telea_reconstruct(observed,binary(m5_remove))
-        corrected=reconstructed_m5.copy()
+        # V8.8 M5 assembly: preserve incumbent V7.8 treatment route-by-route.
+        # SAFE_REMOVE is removed from M3 and receives the local paper estimate.
+        # Residual M5 coordinates retain the exact incumbent V7.8 treatment:
+        #   V7.8 remove     -> paper
+        #   V7.8 ambiguous  -> Telea reconstruction already present in baseline
+        # Protected coordinates and everything outside M3 remain observed.
+        # IMPORTANT: M5 is a residual mask identity, not a new all-Telea class.
+        corrected=observed.copy()
+        corrected[m5_remove]=baseline[m5_remove]
         corrected[safe]=routes['paper'][safe]
+
+        m5_incumbent_remove=m5_remove & routes['remove']
+        m5_incumbent_ambiguous=m5_remove & routes['ambiguous']
+        unexpected_m5=m5_remove & ~(routes['remove'] | routes['ambiguous'])
+        _require(not np.any(unexpected_m5),
+                 'M5_REMOVE contains coordinates outside incumbent remove/ambiguous routes.')
+        _require(np.array_equal(corrected[m5_incumbent_remove],routes['paper'][m5_incumbent_remove]),
+                 'M5 incumbent-remove treatment mismatch.')
+        _require(np.array_equal(corrected[m5_incumbent_ambiguous],baseline[m5_incumbent_ambiguous]),
+                 'M5 incumbent-ambiguous treatment mismatch.')
+        _require(np.array_equal(corrected[m5_remove],baseline[m5_remove]),
+                 'M5_REMOVE does not reproduce incumbent V7.8 treatment.')
+        _require(np.array_equal(corrected[safe],routes['paper'][safe]),
+                 'SAFE_REMOVE paper-treatment mismatch.')
         _require(np.array_equal(corrected[~m3],observed[~m3]),'Outside-M3 drift.')
         _require(np.array_equal(corrected[mask==0],observed[mask==0]),'Outside-mask drift.')
-        _require(np.array_equal(corrected[safe],routes['paper'][safe]),'SAFE_REMOVE paper-treatment mismatch.')
-        _require(np.array_equal(corrected[m5_remove],reconstructed_m5[m5_remove]),'M5_REMOVE reconstruction mismatch.')
         p_remove=np.full(observed.shape,np.nan,np.float64); p_remove[features.y.to_numpy(int),features.x.to_numpy(int)]=p_remove_rows; reason=np.zeros(observed.shape,np.uint8); reason[routes['preserve']]=1; reason[strict_print]=2; reason[m3&~safe]=3; reason[safe]=4
-        audit={'page':page,'operator_bundle_id':self.bundle_id,'p_print_bundle_id':self.p_manifest['bundle_id'],'remove_bundle_id':self.r_manifest['bundle_id'],'authoritative_mask_pixels':int((mask>0).sum()),'p_print_eligible_pixels':int(len(eys)),'strict_print_pixels':int(strict_print.sum()),'m3_pixels':int(m3.sum()),'safe_remove_pixels':int(safe.sum()),'m5_remove_pixels':int(m5_remove.sum()),'assembly_contract':'historical_m5_telea_then_safe_remove_paper','m5_reconstructed_pixels':int(np.sum(reconstructed_m5[m5_remove]!=observed[m5_remove])),'safe_remove_paper_pixels':int(np.sum(corrected[safe]!=observed[safe])),'outside_m3_drift':int(np.sum(corrected[~m3]!=observed[~m3])),'outside_mask_drift':int(np.sum(corrected[mask==0]!=observed[mask==0])),'uses_clean_truth':False,'software':{'python':sys.version,'opencv':cv2.__version__,'numpy':np.__version__,'pandas':pd.__version__,'torch':torch.__version__,'platform':platform.platform()}}
+        audit={'page':page,'operator_bundle_id':self.bundle_id,'p_print_bundle_id':self.p_manifest['bundle_id'],'remove_bundle_id':self.r_manifest['bundle_id'],'authoritative_mask_pixels':int((mask>0).sum()),'p_print_eligible_pixels':int(len(eys)),'strict_print_pixels':int(strict_print.sum()),'m3_pixels':int(m3.sum()),'safe_remove_pixels':int(safe.sum()),'m5_remove_pixels':int(m5_remove.sum()),'assembly_contract':'m5_retains_incumbent_v78_routes_safe_remove_to_paper','m5_incumbent_remove_pixels':int(m5_incumbent_remove.sum()),'m5_incumbent_ambiguous_pixels':int(m5_incumbent_ambiguous.sum()),'m5_v78_mismatch_pixels':int(np.sum(corrected[m5_remove]!=baseline[m5_remove])),'safe_remove_paper_mismatch_pixels':int(np.sum(corrected[safe]!=routes['paper'][safe])),'outside_m3_drift':int(np.sum(corrected[~m3]!=observed[~m3])),'outside_mask_drift':int(np.sum(corrected[mask==0]!=observed[mask==0])),'uses_clean_truth':False,'software':{'python':sys.version,'opencv':cv2.__version__,'numpy':np.__version__,'pandas':pd.__version__,'torch':torch.__version__,'platform':platform.platform()}}
         return PageResult(corrected,observed.copy(),mask>0,baseline,m3,m5_remove,safe,p_print,p_remove,reason,features,audit)
 
 def load_operator(p_print_bundle_root,remove_bundle_root,device=None): return V88Operator(Path(p_print_bundle_root),Path(remove_bundle_root),device=device)
