@@ -58,6 +58,7 @@ import time
 import cv2
 import joblib
 import numpy as np
+import pandas as pd
 
 try:
     import torch
