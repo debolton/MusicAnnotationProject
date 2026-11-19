@@ -1,4 +1,4 @@
-"""Unified V8.8 observed-print / SAFE_REMOVE operator.
+"""Unified V8.9 observed-print / SAFE_REMOVE operator.
 
 Runtime inputs are an observed uint8 grayscale page and an authoritative undilated
 seed mask. Clean/truth data is prohibited. The operator verifies both frozen
