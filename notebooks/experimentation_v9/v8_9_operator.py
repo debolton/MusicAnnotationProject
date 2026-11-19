@@ -195,52 +195,251 @@ class V88Operator:
         audit={'page':page,'operator_bundle_id':self.bundle_id,'p_print_bundle_id':self.p_manifest['bundle_id'],'remove_bundle_id':self.r_manifest['bundle_id'],'authoritative_mask_pixels':int((mask>0).sum()),'p_print_eligible_pixels':int(len(eys)),'strict_print_pixels':int(strict_print.sum()),'m3_pixels':int(m3.sum()),'safe_remove_pixels':int(safe.sum()),'m5_remove_pixels':int(m5_remove.sum()),'assembly_contract':'m5_retains_incumbent_v78_routes_safe_remove_to_paper','m5_incumbent_remove_pixels':int(m5_incumbent_remove.sum()),'m5_incumbent_ambiguous_pixels':int(m5_incumbent_ambiguous.sum()),'m5_v78_mismatch_pixels':int(np.sum(corrected[m5_remove]!=baseline[m5_remove])),'safe_remove_paper_mismatch_pixels':int(np.sum(corrected[safe]!=routes['paper'][safe])),'outside_m3_drift':int(np.sum(corrected[~m3]!=observed[~m3])),'outside_mask_drift':int(np.sum(corrected[mask==0]!=observed[mask==0])),'uses_clean_truth':False,'software':{'python':sys.version,'opencv':cv2.__version__,'numpy':np.__version__,'pandas':pd.__version__,'torch':torch.__version__,'platform':platform.platform()}}
         return PageResult(corrected,observed.copy(),mask>0,baseline,m3,m5_remove,safe,p_print,p_remove,reason,features,audit)
 
+def load_operator(p_print_bundle_root,remove_bundle_root,device=None): return V88Operator(Path(p_print_bundle_root),Path(remove_bundle_root),device=device)
+def run_page(observed,authoritative_seed_mask,operator:V88Operator,page='page'): return operator.run_page(observed,authoritative_seed_mask,page=page)
 
-# -----------------------------------------------------------------------------
-# V8.9 deterministic Ring-2 preservation extension.
-# Parent V8.8 is executed first without alteration. The only output change is
-# exact observed-byte preservation at Ring 2, as defined by Notebook 75 C1.
-# -----------------------------------------------------------------------------
+# ============================================================================
+# V8.9: corrected V8.8 parent plus exact Notebook-75 C1 Ring-2 preservation
+# ============================================================================
+
 @dataclass
 class V89PageResult(PageResult):
+    """V8.8 page result plus explicit V8.9 collar and parent-equivalence arrays."""
+
     parent_v88_corrected: np.ndarray
+    ring1_mask: np.ndarray
     ring2_mask: np.ndarray
     v89_delta_mask: np.ndarray
-    v89_audit: Dict[str,Any]
+    v89_audit: Dict[str, Any]
 
-def ring2_from_m3(m3_mask: np.ndarray) -> np.ndarray:
-    """Notebook-75 C1 Ring 2: pixels at exact in-mask distance 2 from M3 exterior."""
-    m3=np.asarray(m3_mask,bool)
-    depth=cv2.distanceTransform(m3.astype(np.uint8),cv2.DIST_C,3)
-    return m3 & (depth==2)
 
 class V89Operator(V88Operator):
-    """Exact V8.8 parent plus the frozen C1 Ring-2 observed-byte restoration."""
-    def run_page(self,observed,authoritative_seed_mask,page='page')->V89PageResult:
-        parent=super().run_page(observed,authoritative_seed_mask,page=page)
-        ring2=ring2_from_m3(parent.m3_mask)
-        corrected=parent.corrected.copy()
-        corrected[ring2]=parent.observed[ring2]
-        delta=corrected!=parent.corrected
-        _require(np.array_equal(delta,ring2 & (parent.observed!=parent.corrected)),
-                 'V8.9 delta is not exactly the effective Ring-2 C1 delta.')
-        _require(np.array_equal(corrected[~ring2],parent.corrected[~ring2]),
-                 'V8.9 changed a non-Ring-2 pixel.')
-        _require(np.array_equal(corrected[ring2],parent.observed[ring2]),
-                 'V8.9 failed exact observed-byte preservation on Ring 2.')
-        audit=dict(parent.audit)
-        v89={'version':'8.9','parent_version':'8.8','policy':'Notebook75_C1_PRESERVE_RING2',
-             'page':page,'ring2_pixels':int(ring2.sum()),'effective_delta_pixels':int(delta.sum()),
-             'non_ring2_parent_mismatch_pixels':int(np.sum(corrected[~ring2]!=parent.corrected[~ring2])),
-             'ring2_observed_mismatch_pixels':int(np.sum(corrected[ring2]!=parent.observed[ring2])),
-             'uses_clean_truth':False,'requires_external_decisions':False}
-        audit.update({'v8_9':v89})
-        return V89PageResult(corrected,parent.observed,parent.authoritative_mask,parent.baseline_v78,
-            parent.m3_mask,parent.m5_remove_mask,parent.safe_remove_mask,parent.p_print,parent.p_remove,
-            parent.reason_map,parent.features,audit,parent.corrected.copy(),ring2,delta,v89)
+    """
+    Separately versioned V8.9 challenger.
 
-def load_operator(p_print_bundle_root,remove_bundle_root,device=None):
-    return V89Operator(Path(p_print_bundle_root),Path(remove_bundle_root),device=device)
+    The corrected V8.8 operator remains the exact parent implementation.
+    V8.9 makes one treatment change only:
 
-def run_page(observed,authoritative_seed_mask,operator:V89Operator,page='page'):
-    return operator.run_page(observed,authoritative_seed_mask,page=page)
+        Ring 2 = dilation_2(authoritative seed) - dilation_1(authoritative seed)
+
+    At Ring-2 coordinates, V8.9 copies the exact observed byte. Everywhere
+    outside Ring 2, V8.9 reproduces the corrected V8.8 parent byte-for-byte.
+
+    Ring 2 is derived from the undilated authoritative reviewed seed mask.
+    It is not derived from M3, M5, SAFE_REMOVE, distance transform, or any
+    downstream V8.8 route/decision map.
+    """
+
+    operator_version = '8.9'
+    parent_operator_version = '8.8'
+    treatment_id = 'NOTEBOOK75_C1_PRESERVE_RING2'
+
+    def run_page(
+        self,
+        observed,
+        authoritative_seed_mask,
+        page='page',
+    ) -> V89PageResult:
+
+        # Run the corrected frozen V8.8 parent exactly once.
+        parent = super().run_page(
+            observed,
+            authoritative_seed_mask,
+            page=page,
+        )
+
+        observed_array = np.asarray(parent.observed)
+        seed = np.asarray(authoritative_seed_mask) > 0
+
+        _require(
+            seed.shape == observed_array.shape,
+            f'{page}: authoritative seed and observed page shapes differ.',
+        )
+
+        # Exact Notebook-75 collar geometry from the undilated seed.
+        kernel_d1 = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (3, 3),
+        )
+        kernel_d2 = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (5, 5),
+        )
+
+        dilation1 = cv2.dilate(
+            seed.astype(np.uint8),
+            kernel_d1,
+        ) > 0
+
+        dilation2 = cv2.dilate(
+            seed.astype(np.uint8),
+            kernel_d2,
+        ) > 0
+
+        ring1 = dilation1 & ~seed
+        ring2 = dilation2 & ~dilation1
+
+        parent_authority = np.asarray(
+            parent.authoritative_mask,
+            dtype=bool,
+        )
+
+        # The corrected V8.8 authority must be the same canonical dilation-2
+        # mask used to define the outer edge of Notebook-75 Ring 2.
+        prepared_geometry_xor = int(
+            np.logical_xor(
+                parent_authority,
+                dilation2,
+            ).sum()
+        )
+
+        _require(
+            prepared_geometry_xor == 0,
+            (
+                f'{page}: corrected V8.8 authoritative mask differs from '
+                f'exact Notebook-75 dilation-2 geometry at '
+                f'{prepared_geometry_xor} pixels.'
+            ),
+        )
+
+        corrected = parent.corrected.copy()
+        corrected[ring2] = observed_array[ring2]
+
+        delta = corrected != parent.corrected
+        expected_delta = ring2 & (observed_array != parent.corrected)
+
+        non_ring2_parent_mismatch = int(
+            np.sum(
+                corrected[~ring2]
+                != parent.corrected[~ring2]
+            )
+        )
+
+        ring2_observed_mismatch = int(
+            np.sum(
+                corrected[ring2]
+                != observed_array[ring2]
+            )
+        )
+
+        delta_identity_mismatch = int(
+            np.logical_xor(
+                delta,
+                expected_delta,
+            ).sum()
+        )
+
+        outside_authority_drift = int(
+            np.sum(
+                corrected[~parent_authority]
+                != observed_array[~parent_authority]
+            )
+        )
+
+        _require(
+            non_ring2_parent_mismatch == 0,
+            (
+                f'{page}: V8.9 changed '
+                f'{non_ring2_parent_mismatch} non-Ring-2 V8.8 parent pixels.'
+            ),
+        )
+
+        _require(
+            ring2_observed_mismatch == 0,
+            (
+                f'{page}: V8.9 failed exact observed-byte preservation at '
+                f'{ring2_observed_mismatch} Ring-2 pixels.'
+            ),
+        )
+
+        _require(
+            delta_identity_mismatch == 0,
+            (
+                f'{page}: V8.9 effective-delta identity differs from the '
+                f'exact Ring-2 C1 transformation at '
+                f'{delta_identity_mismatch} pixels.'
+            ),
+        )
+
+        _require(
+            outside_authority_drift == 0,
+            (
+                f'{page}: V8.9 introduced '
+                f'{outside_authority_drift} pixels of outside-authority drift.'
+            ),
+        )
+
+        v89_audit = {
+            'version': self.operator_version,
+            'parent_version': self.parent_operator_version,
+            'policy': self.treatment_id,
+            'ring2_definition': (
+                'ellipse_dilation_radius2_seed_minus_'
+                'ellipse_dilation_radius1_seed'
+            ),
+            'ring2_source': 'authoritative_undilated_seed_mask',
+            'page': page,
+            'seed_pixels': int(seed.sum()),
+            'dilation1_pixels': int(dilation1.sum()),
+            'dilation2_pixels': int(dilation2.sum()),
+            'ring1_pixels': int(ring1.sum()),
+            'ring2_pixels': int(ring2.sum()),
+            'effective_delta_pixels': int(delta.sum()),
+            'prepared_geometry_xor': prepared_geometry_xor,
+            'non_ring2_parent_mismatch_pixels': non_ring2_parent_mismatch,
+            'ring2_observed_mismatch_pixels': ring2_observed_mismatch,
+            'delta_identity_mismatch_pixels': delta_identity_mismatch,
+            'outside_authority_drift': outside_authority_drift,
+            'uses_clean_truth': False,
+            'requires_external_decisions': False,
+        }
+
+        audit = dict(parent.audit)
+        audit['v8_9'] = v89_audit
+
+        return V89PageResult(
+            corrected=corrected,
+            observed=parent.observed,
+            authoritative_mask=parent.authoritative_mask,
+            baseline_v78=parent.baseline_v78,
+            m3_mask=parent.m3_mask,
+            m5_remove_mask=parent.m5_remove_mask,
+            safe_remove_mask=parent.safe_remove_mask,
+            p_print=parent.p_print,
+            p_remove=parent.p_remove,
+            reason_map=parent.reason_map,
+            features=parent.features,
+            audit=audit,
+            parent_v88_corrected=parent.corrected.copy(),
+            ring1_mask=ring1,
+            ring2_mask=ring2,
+            v89_delta_mask=delta,
+            v89_audit=v89_audit,
+        )
+
+
+def load_v89_operator(
+    p_print_bundle_root,
+    remove_bundle_root,
+    device=None,
+):
+    """Load the separately versioned V8.9 challenger operator."""
+    return V89Operator(
+        Path(p_print_bundle_root),
+        Path(remove_bundle_root),
+        device=device,
+    )
+
+
+def run_v89_page(
+    observed,
+    authoritative_seed_mask,
+    operator: V89Operator,
+    page='page',
+):
+    """Run one page through the V8.9 challenger."""
+    return operator.run_page(
+        observed,
+        authoritative_seed_mask,
+        page=page,
+    )
