@@ -1,0 +1,17 @@
+MASK_DILATION = 2
+CROP_MARGIN = 48
+MIN_COMPONENT_AREA = 20
+GEOMETRY_THRESHOLD = 80
+BAND_WIDTH = 4
+CONTEXT_RING_RADIUS = 18
+PATCH = 33
+HALF = 16
+DARK_THRESHOLD = 200
+SEED = 42
+CHANNELS = ['obs','norm','mask','depth','horizontal','vertical','compact','preserve','remove','ambiguous','edge']
+PRINT_THRESHOLD = 0.995
+ANNOTATION_THRESHOLD = 0.995
+PRINT_MARGIN = 0.990
+SUPPORTED = {'.png','.jpg','.jpeg','.tif','.tiff','.bmp'}
+CANONICAL_STRUCTURAL_SOURCE = '17_V7_8_Rebuilt_Independent_Data_Builder_Cached_Registration.txt'
+CANONICAL_STRUCTURAL_BLOCK_SHA256 = 'cce24d65e8866b086956855b55e9a5104383c8b936629c5035354968c929b04c'
