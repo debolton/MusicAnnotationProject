@@ -1,0 +1,102 @@
+[
+  {
+    "path": "NOTEBOOK_MIGRATION.md",
+    "bytes": 4134,
+    "sha256": "93bc0e6e9a45d79c915897e97546c359c4767a20911ec0f218a3bfe05723b626"
+  },
+  {
+    "path": "README.md",
+    "bytes": 783,
+    "sha256": "312b248b2e00bf87569cbc4ebd4ad02425a8440bd44a0d49305b8aaaf878c4fc"
+  },
+  {
+    "path": "music_annotation/__init__.py",
+    "bytes": 119,
+    "sha256": "b0ba53227a86ead1a27944f038a83b71aa416d536967adb242d2b0fbe5f40892"
+  },
+  {
+    "path": "music_annotation/__pycache__/__init__.cpython-312.pyc",
+    "bytes": 277,
+    "sha256": "039bcf7327d3575a54062e924af9385854eda230f7c65de75123c30c3823de5a"
+  },
+  {
+    "path": "music_annotation/__pycache__/constants.cpython-312.pyc",
+    "bytes": 930,
+    "sha256": "92419fa7c3a857c055e6b36055083272db6a7698688d35c39ba26d8a11cc2d2c"
+  },
+  {
+    "path": "music_annotation/__pycache__/hashing.cpython-312.pyc",
+    "bytes": 3172,
+    "sha256": "afca91bbd4c883100fbf86f35196c8a52a8edd28aa4d9065af01ee7fe7af66da"
+  },
+  {
+    "path": "music_annotation/__pycache__/metrics.cpython-312.pyc",
+    "bytes": 3348,
+    "sha256": "e4e35955288ccfd24336a531b7125eb1f79cb6470b4cff7b6362e2d60685fd38"
+  },
+  {
+    "path": "music_annotation/__pycache__/observed_print.cpython-312.pyc",
+    "bytes": 7423,
+    "sha256": "810d30ef2cbec8a88e06ab8b4e577cf9314ff524af4a322dfbf6f737ba156f57"
+  },
+  {
+    "path": "music_annotation/__pycache__/policy.cpython-312.pyc",
+    "bytes": 5076,
+    "sha256": "0d9e943a2d47757000d2f4a01f33f6fa9ab2626b2403b927ef7f6b313007f2cf"
+  },
+  {
+    "path": "music_annotation/__pycache__/review_state.cpython-312.pyc",
+    "bytes": 2199,
+    "sha256": "9cb532798ea41ecc1cde5b8ce94f75c602ec10d874e7fa8d27dd593efc74a057"
+  },
+  {
+    "path": "music_annotation/__pycache__/v78_engine.cpython-312.pyc",
+    "bytes": 12081,
+    "sha256": "173cc887058ef0e79e27b4f21993f0da1f4162abcacd4cc7062de2fb954f3d53"
+  },
+  {
+    "path": "music_annotation/constants.py",
+    "bytes": 621,
+    "sha256": "73ee0c2f8366e6f433d7e0a55a15d48c1694fbe1b3eaf986d83ef0243339f79e"
+  },
+  {
+    "path": "music_annotation/hashing.py",
+    "bytes": 851,
+    "sha256": "ec54b05f02928ca2b20a21582eee679bd4a9d635ba5d8f182399b285851aff6b"
+  },
+  {
+    "path": "music_annotation/metrics.py",
+    "bytes": 1098,
+    "sha256": "0b4ceb512312a533adaef0e2b64189a10a7e051553e91641b0b333977713686e"
+  },
+  {
+    "path": "music_annotation/observed_print.py",
+    "bytes": 2530,
+    "sha256": "0001b3be3f6d5f71024c92fbbcfb8f27bf0de4bd03b6865ec065402f2b3d28e3"
+  },
+  {
+    "path": "music_annotation/policy.py",
+    "bytes": 2099,
+    "sha256": "5e73c7d89d362ca25dd4b13d1114b0c51e65beeab129dcf811aad1637fac8a37"
+  },
+  {
+    "path": "music_annotation/review_state.py",
+    "bytes": 586,
+    "sha256": "d430cbd349bc43dd8d5f86b7ed629d523e37a468908c9373d0be527253d5b8e0"
+  },
+  {
+    "path": "music_annotation/v78_engine.py",
+    "bytes": 5102,
+    "sha256": "f6f0bf2057dc7aaad3ff2cf19a6d443cc75c76c24b18f5dcc9b0a99ec62fe64a"
+  },
+  {
+    "path": "requirements.txt",
+    "bytes": 107,
+    "sha256": "5572d35fe2c08bf3fd7fd25eb6e7ef00512a498aaa5d90085a9c857496ff7403"
+  },
+  {
+    "path": "tests/test_smoke.py",
+    "bytes": 678,
+    "sha256": "5ffcfb2a8b754005e654aba246663b9f8802494be492abb5d49a24e048d8dcac"
+  }
+]
