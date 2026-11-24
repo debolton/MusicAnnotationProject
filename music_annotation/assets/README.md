@@ -1,0 +1,1 @@
+The exact Notebook 07 V12 browser code is preserved in `docs/NOTEBOOK_07_EXACT_UI_SOURCE.txt`. It includes bounded wheel scrolling, pointer-centred Ctrl+wheel zoom, pan/add/erase modes, undo/redo, fit width/page, confidence heatmap, final-mask-only view, and Gradio 6 `js_on_load`.

@@ -1,0 +1,12 @@
+SOURCE CONTRACT: 07_HITL_CPU_Reviewer.ipynb V12
+The UI must preserve the following exact behaviours from the supplied notebook:
+- single browser-side canvas; fit width/page
+- ordinary wheel changes only vertical offset and clamps it to page bounds
+- Ctrl+wheel zoom factor 1.15, clamped to 0.08..12, centred on pointer
+- Pan, ADD and ERASE modes; middle mouse/Space temporary pan
+- brush 2..80 default 14; confidence 0.20..1.00 default 0.20; opacity 5..95 default 70
+- local combined ADD/ERASE undo/redo, history length 30
+- display confidence weighting, but save always starts from the complete 0.20 draft mask
+- final = (draft OR additions) AND NOT erasures
+- Gradio 6 js_on_load lifecycle; public link configurable
+The complete executable source remains in 07_HITL_CPU_Reviewer.ipynb.txt and should be retained beside this package for audit. The Python save/load backend in hitl_reviewer_backend.py is extracted exactly.
