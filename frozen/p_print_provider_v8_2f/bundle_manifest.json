@@ -1,0 +1,16 @@
+{
+  "bundle_id": "e268413f8e6b1b6c8de765eb96d579d528ed1f3ccf79b97a85f5765e9649dbd0",
+  "calibrator": "p_print_calibrator.joblib",
+  "calibrator_sha256": "37a22603ebd8b40e74cce4f4e4ffb207d416085ffe6950114d1872a59044b1e6",
+  "channel_schema_sha256": "9a025201d6c94a8bf482f6c9d4425a9e8c15ca126a8eae92b8f616dd4709982e",
+  "clean_truth_required_at_inference": false,
+  "model": "p_print_model.pt",
+  "model_sha256": "b53e38f997a9fc2f33317dbcfbfc025a9b00c8265bc548893f1a813900c5943c",
+  "promotion_authority": false,
+  "provider_id": "3f2a9f633c5755b0dfc8d17d0c0f4e575a77bfd402f8f01df87019cb8581fa8d",
+  "provider_policy_sha256": "5450f1d39c453dea64778561c2a777f1f81386b250378700809bf6c8b761ae76",
+  "provider_source_sha256": "266aeae95adf475c789026e41470457147888062c45d2e92c0e5d03af2021a5e",
+  "replay_sha256": "5b1d5cec3e890c3ffdf4f1dd799a557796676139a119d19a4a35973c6e878408",
+  "unseen_page_inference": true,
+  "version": "8.2F-full-development-p-print-provider"
+}

@@ -1,0 +1,14 @@
+{
+  "calibrator_sha256": "37a22603ebd8b40e74cce4f4e4ffb207d416085ffe6950114d1872a59044b1e6",
+  "checks": {
+    "calibrated_exact": true,
+    "finite": true,
+    "raw_exact": true,
+    "schema_exact": true,
+    "unit_interval": true
+  },
+  "model_sha256": "b53e38f997a9fc2f33317dbcfbfc025a9b00c8265bc548893f1a813900c5943c",
+  "passed": true,
+  "provider_id": "3f2a9f633c5755b0dfc8d17d0c0f4e575a77bfd402f8f01df87019cb8581fa8d",
+  "provider_source_sha256": "266aeae95adf475c789026e41470457147888062c45d2e92c0e5d03af2021a5e"
+}
