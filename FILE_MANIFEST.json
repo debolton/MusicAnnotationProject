@@ -1,83 +1,73 @@
 [
   {
-    "path": ".gitignore",
-    "bytes": 65,
-    "sha256": "a6fb446f7594e9f9c2bd3699871d31c7bf2713f53e32ea9f618012906d070a6b"
-  },
-  {
     "path": "README.md",
-    "bytes": 436,
-    "sha256": "ef809dcdb95e35112736831e260f55c88191e795f0128aac6d2655a1f71d9a38"
+    "bytes": 623,
+    "sha256": "35a6471e8efbef594a224698b7cfb8fb3d53b7745a086bc54a934d71fd93e2fd"
   },
   {
     "path": "app.py",
-    "bytes": 6038,
-    "sha256": "df5a8aff75775b1d27f3a5f7aaccbccb95b4b26f2435b83da5a202598c1a7870"
+    "bytes": 5041,
+    "sha256": "30019c8816350ce686f9e6e511d361bd61db60857d803e0445a226e0fefac841"
   },
   {
-    "path": "docs/FROZEN_MODEL_TRANSFER_CHECKLIST.md",
-    "bytes": 381,
-    "sha256": "6fe6d91ad3fc167d5917fd061da9d25da1bdc3ca6930f19b6de2633b61343ea2"
+    "path": "docs/DEPLOY.md",
+    "bytes": 191,
+    "sha256": "d66036ae64d164b27eb4621d690e97296f9d15af801b54b7ac917d9fc75df065"
   },
   {
-    "path": "docs/HF023_TEST.md",
-    "bytes": 456,
-    "sha256": "ee9c812ef193809855af919b3138831d6a668b845d8f9dc601c4bef8fe34524d"
-  },
-  {
-    "path": "frozen/observed_print_v8_2/models/OPTIONAL_V82_NOT_USED_BY_HF023.txt",
-    "bytes": 134,
-    "sha256": "a608461cde5e8a489a3d8c9c9926e7871c005812e4ad9aaf4b075cb86e4bc29c"
+    "path": "docs/TEST.md",
+    "bytes": 390,
+    "sha256": "228fe32a865823ee6ff72df1c666a05e008702959fb5c00132e265b7c804143f"
   },
   {
     "path": "frozen/structural_policy_v7_7f/artefacts/PUT_V77F_FILES_HERE.txt",
-    "bytes": 134,
-    "sha256": "a608461cde5e8a489a3d8c9c9926e7871c005812e4ad9aaf4b075cb86e4bc29c"
+    "bytes": 50,
+    "sha256": "20dc5dbefd7453c79647a080bdbd0236e827fec90a8fa8ca0d566435b241ae72"
   },
   {
     "path": "frozen/yolo_detector/PUT_best.pt_HERE.txt",
-    "bytes": 134,
-    "sha256": "a608461cde5e8a489a3d8c9c9926e7871c005812e4ad9aaf4b075cb86e4bc29c"
+    "bytes": 50,
+    "sha256": "20dc5dbefd7453c79647a080bdbd0236e827fec90a8fa8ca0d566435b241ae72"
   },
   {
     "path": "music_annotation/__init__.py",
     "bytes": 20,
-    "sha256": "39ea2ebad7e1ab74a1c09f144c2435b489bc604fb5b21a1055092920351f4a6b"
+    "sha256": "572e485f62f12c0b176ca6a8cd39952ff05f1151fbdb08d19eaaf3f3e9860b06"
+  },
+  {
+    "path": "music_annotation/backend.py",
+    "bytes": 2487,
+    "sha256": "034b9bd892c3422fa3c05cf1798a91d2de69c44a90c2fef3afd3da7d14aff5bc"
   },
   {
     "path": "music_annotation/hashing.py",
-    "bytes": 260,
-    "sha256": "0cf03a31a2570008c57de5992d4d827af60d0f24b7fb5f8e00088739d8e9c1dd"
+    "bytes": 158,
+    "sha256": "438eaf64e8373977be983339e8e084d8de70977aac660e850ef0466e8b39c6a8"
   },
   {
     "path": "music_annotation/hitl_generator.py",
-    "bytes": 1210,
-    "sha256": "8e41e4c655257cbe38f014f9e7605cb4147981eebf76bfc5f75d29d0afd4252b"
+    "bytes": 945,
+    "sha256": "e10bd1058a75ab4cb0794333bc89a72f0945f811bfb775c68b3c862d19975dc6"
   },
   {
-    "path": "music_annotation/notebook07_canvas.py",
-    "bytes": 6985,
-    "sha256": "c40a0f8ea607056189265e1a59e30f3e1c0696133033085aaa3ce92c19196abb"
-  },
-  {
-    "path": "music_annotation/review_backend.py",
-    "bytes": 2894,
-    "sha256": "3921be10f1b6ebf43af977f5c46c3fd7ee50703fcb1df2d39adc6cfa70bd72fd"
+    "path": "music_annotation/ipad_canvas.py",
+    "bytes": 5613,
+    "sha256": "83afada54ce865f4ee34db4d50e4d9378e5912fd06fc6842c5bc0dc005d5cf86"
   },
   {
     "path": "music_annotation/session_store.py",
-    "bytes": 848,
-    "sha256": "c0203e2bb29c7e02528b77e53dd0e331b47ecf024b6940096a4e365226ade7e8"
+    "bytes": 851,
+    "sha256": "28356948a87f278565df9ce8a7c583ff0cdd0cc066979822a0d189a55bffb845"
   },
   {
     "path": "music_annotation/v77_policy.py",
-    "bytes": 2108,
-    "sha256": "9edb874c4e27ea25ca3099f03de26f93a264f6c897194ed1e8e734ea41f92f17"
+    "bytes": 1867,
+    "sha256": "3e4312c2d8aeeb01bafb1dfd9a0537e8260939b2e83c04d67a457875efcbc869"
   },
   {
     "path": "music_annotation/v78_engine.py",
-    "bytes": 4451,
-    "sha256": "578d85d5da5b1a4e607937a7d66383d1a1605436d43744e0dd197afaaf0f5f8f"
+    "bytes": 2615,
+    "sha256": "fad3eaa1341c7bf2b20166947f654d20106ea0ea4054c377f86f17d67ea91ea7"
   },
   {
     "path": "packages.txt",
