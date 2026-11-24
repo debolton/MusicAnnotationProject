@@ -1,1 +1,1 @@
-Make 1-3 strokes per commit. Complete at least 10 commits, mixing ADD and ERASE, then undo once and download the package. Rebooting Safari may help available memory, but the repeated editor reset is the actual stability control.
+Generate Page 28. Complete at least 10 cycles of 1-3 strokes followed by Commit. Mix ADD and ERASE, use Undo once, then Finish and download the evidence package. During commits, no separate image component should update.
