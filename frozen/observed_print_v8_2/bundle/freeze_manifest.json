@@ -1,0 +1,55 @@
+{
+  "calibration_source": "preserved V8.2 source-group OOF raw scores and truth",
+  "compatibility_id": "1de514da74072fc184b75926c34023696fd0344c772ae712e2811080813e7885",
+  "created_utc": "2026-11-12T08:58:53.784487+00:00",
+  "deployment_bundle_complete": true,
+  "objects": [
+    {
+      "bytes": 610,
+      "relative_path": "channel_schema.json",
+      "sha256": "322427e514766a771cc73aa4f26a787cb0af09a8d9ef3a439c73136ee9b22aef"
+    },
+    {
+      "bytes": 2695,
+      "relative_path": "observed_print_calibrator.joblib",
+      "sha256": "37a22603ebd8b40e74cce4f4e4ffb207d416085ffe6950114d1872a59044b1e6"
+    },
+    {
+      "bytes": 170469,
+      "relative_path": "observed_print_model.pt",
+      "sha256": "c4f173530c6309a00f1fce476da94167db73eaa86202a2bd6ea30920d571bb13"
+    },
+    {
+      "bytes": 909,
+      "relative_path": "policy.json",
+      "sha256": "337d9c3f3c78eaf048d3a7e8b2d99be44f63baa24c650ddd8d79c665b13f70df"
+    },
+    {
+      "bytes": 559,
+      "relative_path": "preprocessing_identity.json",
+      "sha256": "e5c45f7f9e6b40c23ca1094318382dce598e67c474af04bfec1e76b7be650ee0"
+    },
+    {
+      "bytes": 524,
+      "relative_path": "runtime_contract.json",
+      "sha256": "13d4a7603368f19e878920de80da304ccfa4c314562c0c213cd175fe1e3a708e"
+    },
+    {
+      "bytes": 294,
+      "relative_path": "software_environment.json",
+      "sha256": "94b3733e8280950222a4ba0b53e65aa40b55bc3efa49497fe27c0f3e91c0e0d1"
+    }
+  ],
+  "policy_id": "V8_2_OBSERVED_PRINT_DEPLOYMENT_1DE514DA74072FC1",
+  "production_authority": false,
+  "replay_file": "../replay/replay_test.json",
+  "replay_sha256": "03e980b1660bffbcc8b4a5e44a6dff7c9c736052052d1501ce5be57c78fd2799",
+  "source_raw_oof_sha256": "e1fa988ba23fb5029d5dfc526646782498a73653e80bb567dad4c5ecfd8fded9",
+  "source_stable_manifest_sha256": "4e32befc3d8b3ecb64655a67fcf52f80ee403fe638861fa227a41d5ac9b01c4e",
+  "source_v82_identity_sha256": "6a483f57b4aa70f0580c1c71e01c2fa01188d79621dfe356e12d665cfc019163",
+  "source_v82_run": "/content/drive/MyDrive/MusicAnnotationProject/observed_print_classifier_v8_2/20261018_082545_v8_2_development_whole_page",
+  "training_pages": 51,
+  "training_rows": 189109,
+  "training_source_groups": 17,
+  "version": "59P1-v8.2-observed-print-deployment-freeze"
+}

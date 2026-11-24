@@ -1,0 +1,16 @@
+{
+  "arrays_sha256": "323d8cc6cb9a49eee05554c44e90d9590b37ec261f98894cf24a07a0552cb5c3",
+  "calibrator_reload_exact": true,
+  "compatibility_id": "1de514da74072fc184b75926c34023696fd0344c772ae712e2811080813e7885",
+  "decision_array_sha256": "c8d4d9f524d08e0eedffae676abf16601b6ea92b1118fe635c19bbff671a8ae6",
+  "decision_reload_exact": true,
+  "model_reload_exact": true,
+  "p_print_array_sha256": "1078571dd178d981aa215dc294e25a2384318f903dab5c140e0c8d2385d110af",
+  "pages": 16,
+  "passed": true,
+  "policy_id": "V8_2_OBSERVED_PRINT_DEPLOYMENT_1DE514DA74072FC1",
+  "raw_array_sha256": "2919c55b796a0ca0dfcdcc8ad04a94aeee452928f1f5a44531db996e4552d3ac",
+  "rows": 4096,
+  "sample_sha256": "68c2a8a28fccbe3f745bd469f31c5149c44024b239c4caad719048be76dd21fe",
+  "source_groups": 11
+}

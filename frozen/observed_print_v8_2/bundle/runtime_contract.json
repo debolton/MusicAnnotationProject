@@ -1,0 +1,13 @@
+{
+  "compatibility_id": "1de514da74072fc184b75926c34023696fd0344c772ae712e2811080813e7885",
+  "eligible_population": "inside prepared mask, observed < 200, not already preserve",
+  "notebook06_confidence_permitted_as_substitute": false,
+  "output": "calibrated p_print and decisions",
+  "outside_mask_immutable": true,
+  "policy_id": "V8_2_OBSERVED_PRINT_DEPLOYMENT_1DE514DA74072FC1",
+  "required_runtime_inputs": [
+    "aligned observed page",
+    "human-reviewed corrected mask",
+    "exact V7.8 observable channels"
+  ]
+}

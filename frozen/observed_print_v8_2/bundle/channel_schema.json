@@ -1,0 +1,38 @@
+{
+  "channels": [
+    "obs",
+    "norm",
+    "mask",
+    "depth",
+    "horizontal",
+    "vertical",
+    "compact",
+    "preserve",
+    "remove",
+    "ambiguous",
+    "edge"
+  ],
+  "dtype": "float32",
+  "half_patch": 16,
+  "normalisation": {
+    "norm": "divide_255",
+    "obs": "divide_255",
+    "other": "native_float32"
+  },
+  "ordered_channels": [
+    "obs",
+    "norm",
+    "mask",
+    "depth",
+    "horizontal",
+    "vertical",
+    "compact",
+    "preserve",
+    "remove",
+    "ambiguous",
+    "edge"
+  ],
+  "padding": "reflect",
+  "patch": 33,
+  "schema_version": "v8.2-observed-print-11-channel-33x33"
+}

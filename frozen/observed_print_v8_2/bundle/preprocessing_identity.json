@@ -1,0 +1,15 @@
+{
+  "architecture": "TopologyCNN-v8.2",
+  "batch": 512,
+  "epochs": 12,
+  "lr": 0.001,
+  "pages": 51,
+  "policy_id": "V8_2_OBSERVED_PRINT_DEPLOYMENT_1DE514DA74072FC1",
+  "seed": 42,
+  "source_groups": 17,
+  "source_identity_sha256": "6a483f57b4aa70f0580c1c71e01c2fa01188d79621dfe356e12d665cfc019163",
+  "source_v82_run": "/content/drive/MyDrive/MusicAnnotationProject/observed_print_classifier_v8_2/20261018_082545_v8_2_development_whole_page",
+  "tensor_builder": "reflect pad 16; ordered 33x33 patches",
+  "training_rows": 189109,
+  "weight_decay": 0.0001
+}

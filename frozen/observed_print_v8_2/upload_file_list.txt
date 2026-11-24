@@ -1,0 +1,14 @@
+bundle/channel_schema.json
+bundle/policy.json
+bundle/runtime_contract.json
+bundle/preprocessing_identity.json
+bundle/software_environment.json
+bundle/freeze_manifest.json
+replay/replay_test.json
+audit/all_development_fit_record.json
+audit/calibration_fitting_record.json
+audit/source_v82_object_verification.csv
+audit/input_identity.csv
+tables/training_history.csv
+[DURABLE_ONLY]/bundle/observed_print_model.pt
+[DURABLE_ONLY]/bundle/observed_print_calibrator.joblib
