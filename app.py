@@ -29,7 +29,7 @@ def finalise(sid,decisions):
     z=load(sid);b=load(sid,'build');f=pd.read_csv(folder(sid)/'components.csv');missing=[int(c) for c in f.component if decisions.get(str(int(c))) not in ('accepted','left_unchanged')]
     if missing:raise gr.Error(f'{len(missing)} component(s) remain unreviewed/deferred.')
     out=current(z['gray'],b['proposal'],b['labels'],decisions);assert np.array_equal(out[b['mask']==0],z['gray'][b['mask']==0]);cv2.imwrite(str(folder(sid)/'approved_final_page.png'),out);return out,'Final page approved. Outside-mask immutability passed.'
-with gr.Blocks(title='Music Annotation HF-02.8',css=CSS) as demo:
+with gr.Blocks(title='Music Annotation HF-02.8') as demo:
     gr.Markdown('''# Music Annotation Removal Assistant - HF-02.8
 The page is rendered as a normal browser image. Only the transparent ADD/ERASE stroke layer uses canvas.''')
     sid=gr.State('');decisions=gr.State({})
@@ -44,4 +44,4 @@ The page is rendered as a normal browser image. Only the transparent ADD/ERASE s
         approve=gr.Button('Approve final page',variant='primary');final=gr.Image(label='Approved full-resolution page');final_status=gr.Textbox(interactive=False)
     event=go.click(generate,inp,[pkg,sid,status]);event.then(None,pkg,None,js='(raw)=>{if(raw&&window.hitlIngest)window.hitlIngest(raw);return []}')
     bridge.change(authorise,[bridge,sid],[proposal,table,component,decisions,mask_status,assets,bridge]);component.change(crop,[sid,component],[pair,info]);accept.click(lambda s,c,d:decide(s,c,'accepted',d),[sid,component,decisions],[current_image,decisions,decision_status]);leave.click(lambda s,c,d:decide(s,c,'left_unchanged',d),[sid,component,decisions],[current_image,decisions,decision_status]);defer.click(lambda s,c,d:decide(s,c,'deferred',d),[sid,component,decisions],[current_image,decisions,decision_status]);approve.click(finalise,[sid,decisions],[final,final_status])
-if __name__=='__main__':demo.launch()
+if __name__=='__main__':demo.launch(css=CSS)
