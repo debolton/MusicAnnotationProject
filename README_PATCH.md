@@ -1,12 +1,13 @@
-# HF-02.1 drop-in patch
-Overlay these files onto the working HF-02 repository. Keep the existing frozen artefacts and existing `music_annotation/hitl_generator.py`, `v77_policy.py`, `v78_engine.py`, and `supervised.py`.
+# HF-02.2 patch
+Overlay this patch on the current HF-02 repository.
 
-Changes:
-- full-resolution page/confidence/masks live in server-side `runtime_sessions/` files;
-- `gr.State` carries only a short session ID and decision dictionary;
-- browser previews have a maximum width of 1200 px;
-- ADD and ERASE are separate paint layers;
-- authoritative seed is `(draft OR ADD) AND NOT ERASE`;
-- edited preview masks are upscaled with nearest-neighbour interpolation;
-- V7.8 and V7.7F still run at original resolution;
-- only final approval returns one full-resolution image.
+Workflow:
+1. Upload only.
+2. Generate YOLO draft server-side.
+3. Automatically navigate to one lightweight canvas.
+4. Switch one canvas between Mask, Confidence and Original.
+5. Pan / ADD / ERASE / Undo / Redo / Reset.
+6. Authorise `(draft OR ADD) AND NOT ERASE`.
+7. Automatically navigate to V7.8/V7.7F component review.
+
+The upload tab returns no overlay or heatmap. Full-resolution arrays remain in `runtime_sessions`; the browser receives one preview and compact stroke JSON.
