@@ -1,9 +1,9 @@
 {
-  "model": "best.pt",
-  "training_run": "20261006_150912_yolo11n-seg",
-  "inference_confidence": 0.20,
-  "tile_size": 640,
-  "tile_stride": 320,
-  "model_image_size": 640,
-  "sha-256": "xxx"
+    "model": "best.pt",
+    "training_run": "20261006_150912_yolo11n-seg",
+    "inference_confidence": 0.20,
+    "tile_size": 640,
+    "tile_stride": 320,
+    "model_image_size": 640,
+    "sha256": "4cccf8e2bb47ad5a2f8f78eb3de9fe97bd55feead742b8756399d50ad4ee2749"
 }
