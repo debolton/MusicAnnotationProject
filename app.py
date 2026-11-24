@@ -59,7 +59,7 @@ def finalise(decisions,sid):
     assert np.array_equal(out[b['mask']==0],page[b['mask']==0])
     return out,'Full-resolution supervised page approved.'
 
-with gr.Blocks(title='Music Annotation HF-02.1',css='.gradio-container{max-width:1250px!important}') as demo:
+with gr.Blocks(title='Music Annotation HF-02.1') as demo:
     gr.Markdown('# Music Annotation Removal Assistant - HF-02.1\nFull-resolution arrays remain server-side. The iPad receives previews no wider than 1200 pixels. Authoritative mask = (draft OR ADD) AND NOT ERASE.')
     sid=gr.State(''); decisions=gr.State({})
     with gr.Tab('1 Upload and YOLO'):
