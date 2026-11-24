@@ -1,6 +1,11 @@
-gradio==6.0.1
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
 numpy
 opencv-python-headless
 Pillow
 torch
 ultralytics
+pandas
+scikit-learn
+joblib

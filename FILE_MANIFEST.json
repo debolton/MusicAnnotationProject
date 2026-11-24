@@ -1,42 +1,92 @@
 [
   {
+    "path": "Dockerfile",
+    "bytes": 338,
+    "sha256": "3b1777156d8c969d4712619745f1010ed464fa1cda611a3a12627083b31f9f46"
+  },
+  {
     "path": "README.md",
-    "bytes": 366,
-    "sha256": "d34bf3ff4d8cc35e306b7cb4a5d2ce0ee8f37771296f9bc596933d84f9ad5915"
+    "bytes": 501,
+    "sha256": "0d020b87ac6dfa4086022d917b156d53d464b5cdbe0d5e8b5ef25b9ddefce011"
   },
   {
-    "path": "app.py",
-    "bytes": 7799,
-    "sha256": "324c7b124c8fd891b72a7ad3de9fdcb6bf6b3c02b895d77002baccee84c68547"
-  },
-  {
-    "path": "packages.txt",
+    "path": "app/__init__.py",
     "bytes": 20,
-    "sha256": "f08ee42a295ca8bb5075789a0cc1ed5789505cb37f0817af28539d4667e9cf18"
+    "sha256": "23c75c19bf24fc21a1cdbae99633b4faa584db03ed239f7f79159cab0f7774b0"
   },
   {
-    "path": "requirements.txt",
-    "bytes": 68,
-    "sha256": "9430167b631e5bf14e1e671c0dac25876b027557d4bcd18a9f06324fc503e377"
+    "path": "app/main.py",
+    "bytes": 6431,
+    "sha256": "7bdef6b17f8cc7b130871e84209d40e9029c6abfa1888ebf8ec57a679f2094cb"
+  },
+  {
+    "path": "app/policy.py",
+    "bytes": 1837,
+    "sha256": "5f4196f2267ec4ff3a6b331788867822a50af2099b29739716d5b582c1003aee"
+  },
+  {
+    "path": "app/static/app.js",
+    "bytes": 4656,
+    "sha256": "936e8b2010c5f2f933294a0af87183d765e862f295870973eb7d3db8162b81d7"
+  },
+  {
+    "path": "app/static/style.css",
+    "bytes": 954,
+    "sha256": "372d1b7b32f2a094ad4f1dcca8be2ba81fb65ce898e98fc8c1f6f8db9f55a130"
+  },
+  {
+    "path": "app/store.py",
+    "bytes": 978,
+    "sha256": "0d6056c112c723f0542d86104362b6767535531a6c4f2b84e159d48c10a91f06"
+  },
+  {
+    "path": "app/templates/index.html",
+    "bytes": 1288,
+    "sha256": "8e71bb3cc3f9391357da1d594960c00f7abba783c106ba2f32ebb46b266f7a6a"
+  },
+  {
+    "path": "app/v78.py",
+    "bytes": 4714,
+    "sha256": "102656d7bc17c4273044da23cb06c020162124cc143c3b97e1006295fbdb1937"
+  },
+  {
+    "path": "app/yolo.py",
+    "bytes": 839,
+    "sha256": "df450c5a85ff7d43a9848f150a5e3cab5f9a45fce8e94a10b3671eda3c27169e"
+  },
+  {
+    "path": "docs/ARCHITECTURE.md",
+    "bytes": 437,
+    "sha256": "35816107fc57b43fad45dc5a07dae63802c14603063fe29519cc1e9263597dd3"
   },
   {
     "path": "docs/DEPLOY.md",
-    "bytes": 124,
-    "sha256": "cb35e93e7dd82ab20bc521d379da0e60e6378300b156e6643525e5e02b1e23da"
+    "bytes": 459,
+    "sha256": "730793f1c7e6b702b661e63f0ab7fa4ad5369e4d867fcd7b4bb3d45c0f6df94c"
   },
   {
     "path": "docs/IPAD_TEST.md",
-    "bytes": 221,
-    "sha256": "b25a36000494f473edbf489ed72a8ac0b8c1ddb7b5c85b473799a166181d9211"
+    "bytes": 489,
+    "sha256": "a962f1d6bbcdcc6ebba389e4a29e592ba8027e696a8164fd2b56afdb2805b115"
   },
   {
-    "path": "runtime_sessions/.gitkeep",
-    "bytes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "path": "frozen/structural_policy_v7_7f/artefacts/PUT_V77F_FILES_HERE.txt",
+    "bytes": 148,
+    "sha256": "a42251600613d6c983e25aa0f11bdf658926a2319251f8249f015de19e5032bf"
   },
   {
     "path": "frozen/yolo_detector/PUT_best.pt_HERE.txt",
     "bytes": 41,
     "sha256": "b958e6ed97d6d326ea84e9376ad5e60a4815976b419bd3b2f39b308a37c05fc8"
+  },
+  {
+    "path": "requirements.txt",
+    "bytes": 149,
+    "sha256": "0c14678eb2e14d41bcea1ccb2e5db4c3a9926754f11fcd29f2bdb4adc1a50cbb"
+  },
+  {
+    "path": "runtime_sessions/.gitkeep",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   }
 ]
