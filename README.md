@@ -1,5 +1,19 @@
 # Music Annotation shared Python library
 
+---
+title: {{title}}
+emoji: {{emoji}}
+colorFrom: {{colorFrom}}
+colorTo: {{colorTo}}
+sdk: {{sdk}}
+sdk_version: "{{sdkVersion}}"
+{{#pythonVersion}}
+python_version: "{{pythonVersion}}"
+{{/pythonVersion}}
+app_file: app.py
+pinned: false
+---
+
 This extraction centralises the canonical V7.8 correction engine, V8.2 tensor/CNN definitions, policy helpers, metrics, hashing and Pilot 09 component-signature logic.
 
 It intentionally leaves notebook-specific orchestration, Drive paths, experiment outputs, Gradio wiring and diagnostic visualisation in the notebooks.
