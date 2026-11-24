@@ -1,9 +1,3 @@
 gradio==6.0.1
 numpy
 opencv-python-headless
-Pillow
-torch
-ultralytics
-pandas
-scikit-learn
-joblib
