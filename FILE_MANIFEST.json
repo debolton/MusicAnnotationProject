@@ -1,97 +1,37 @@
 [
   {
-    "path": "Dockerfile",
-    "bytes": 338,
-    "sha256": "3b1777156d8c969d4712619745f1010ed464fa1cda611a3a12627083b31f9f46"
-  },
-  {
     "path": "README.md",
-    "bytes": 375,
-    "sha256": "236ff6c885e454ab8908e3d598889dffd0572ee495c10a39d0b8ccf4104ce661"
+    "bytes": 354,
+    "sha256": "b69c23a7c2f1b086a763a080ebcd767efadfda3991485f3820987fa8181d89fb"
   },
   {
-    "path": "app/__init__.py",
-    "bytes": 20,
-    "sha256": "45b39bf623a03936cfb536a77bdf1c0164aeb53c4cd0e27a118259fce71ee74e"
+    "path": "app/component_review.py",
+    "bytes": 3215,
+    "sha256": "85eadb4a1eab46bbb652c93525d7d30c432253df3c1d6d0a66ad4b99c5c398a2"
   },
   {
-    "path": "app/authorise.py",
-    "bytes": 4031,
-    "sha256": "9c480e86edc3fe973c6e3f99229777c3d420bba18da5e06e12a392b660fd1ed6"
+    "path": "app/main_hf033_routes.py",
+    "bytes": 1523,
+    "sha256": "629636cbfb4d9aa01bb6350db43e3f15b3b9e3c546fbab65c96b9230e3e8e89a"
   },
   {
-    "path": "app/main.py",
-    "bytes": 6541,
-    "sha256": "5d310a3365f6f7980c96ff2514188ddc420f6a9259165d83b937e07fc39ee1a3"
+    "path": "app/static/review.css",
+    "bytes": 1202,
+    "sha256": "ca5eb6bd2ef19883c87c73c6aac5cffba47d8734a10260e795246f5d3a8135a9"
   },
   {
-    "path": "app/policy.py",
-    "bytes": 2494,
-    "sha256": "98179f495071390ad0e1e104860410c15e906545e205a680e3d8deb1ce597dcf"
+    "path": "app/static/review.js",
+    "bytes": 2826,
+    "sha256": "4bec8a89d81490ef5a0dd2be8122ca875abbc4835bcb94d6a20ca0a81266af88"
   },
   {
-    "path": "app/static/app.js",
-    "bytes": 4819,
-    "sha256": "850ddba2dd33531b297ab87a5d9c002867a13c6759755925793a095d19bea21d"
+    "path": "app/templates/component_review_fragment.html",
+    "bytes": 1406,
+    "sha256": "9cc48979d3ce9ae82fac59b0cd8ef9b03d2452c6f0cf6dcd07f3ccbd3df286d1"
   },
   {
-    "path": "app/static/style.css",
-    "bytes": 953,
-    "sha256": "7a8cf25eedec8725f6c40d0449fb79d0cc82cd7bc0e6a735ba5a1846a1d20ff6"
-  },
-  {
-    "path": "app/store.py",
-    "bytes": 978,
-    "sha256": "0d6056c112c723f0542d86104362b6767535531a6c4f2b84e159d48c10a91f06"
-  },
-  {
-    "path": "app/templates/index.html",
-    "bytes": 1287,
-    "sha256": "a070f393d3903326ac1f2e7a40db00dc6d98c39ab9398ab1088e465658a768f9"
-  },
-  {
-    "path": "app/v78.py",
-    "bytes": 4756,
-    "sha256": "a1f9efe63f4dbc5511b770f3bb342ce11006791aade0a49bb2715c709b0272da"
-  },
-  {
-    "path": "app/yolo.py",
-    "bytes": 839,
-    "sha256": "df450c5a85ff7d43a9848f150a5e3cab5f9a45fce8e94a10b3671eda3c27169e"
-  },
-  {
-    "path": "docs/AUTHORISE_STAGES.md",
-    "bytes": 393,
-    "sha256": "7eca9e5d7e2dadcdeaf65119d6bcc4aa372362ac5ca3266d14838786fa0043b1"
-  },
-  {
-    "path": "docs/DEPLOY.md",
-    "bytes": 293,
-    "sha256": "18c4bb1ad377d00d99df33b3851c059ea1bd2e2a6238faba0d5d47ab96169f4a"
-  },
-  {
-    "path": "docs/IPAD_TEST.md",
-    "bytes": 297,
-    "sha256": "e7e51f7b02d422c9e95b6c4b6befbdff6e540b885e875311c09fafa3a77d880f"
-  },
-  {
-    "path": "frozen/structural_policy_v7_7f/artefacts/PUT_V77F_FILES_HERE.txt",
-    "bytes": 120,
-    "sha256": "4ec550590d0a4dc87708441761b839febbf575f6f3bacc52838ba2f1c83867ff"
-  },
-  {
-    "path": "frozen/yolo_detector/PUT_best.pt_HERE.txt",
-    "bytes": 41,
-    "sha256": "b958e6ed97d6d326ea84e9376ad5e60a4815976b419bd3b2f39b308a37c05fc8"
-  },
-  {
-    "path": "requirements.txt",
-    "bytes": 149,
-    "sha256": "0c14678eb2e14d41bcea1ccb2e5db4c3a9926754f11fcd29f2bdb4adc1a50cbb"
-  },
-  {
-    "path": "runtime_sessions/.gitkeep",
-    "bytes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "path": "docs/INSTALL.md",
+    "bytes": 812,
+    "sha256": "02ed955d95479b799a766939ce5f9537675eb1ae2abfc562be15e67203515324"
   }
 ]
