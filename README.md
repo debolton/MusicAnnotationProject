@@ -1,15 +1,10 @@
 # Music Annotation shared Python library
 
 ---
-title: {{title}}
-emoji: {{emoji}}
-colorFrom: {{colorFrom}}
-colorTo: {{colorTo}}
-sdk: {{sdk}}
-sdk_version: "{{sdkVersion}}"
-{{#pythonVersion}}
-python_version: "{{pythonVersion}}"
-{{/pythonVersion}}
+title: Music Annotation Project
+emoji: 🎼
+colorFrom: blue
+colorTo: green
 app_file: app.py
 pinned: false
 ---
