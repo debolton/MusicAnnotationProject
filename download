@@ -1,5 +1,0 @@
-__pycache__/
-*.pyc
-.DS_Store
-data/runtime/*
-!data/runtime/.gitkeep
