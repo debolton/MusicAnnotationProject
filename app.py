@@ -64,4 +64,4 @@ with gr.Blocks(title='Music Annotation HF-02.5') as demo:
   return (*authorise(command.get('add',''),command.get('erase',''),sid), '')
  action_bridge.change(handle_action,[action_bridge,sid],[proposal,table,component,decisions,mask_status,action_bridge],show_progress='minimal')
  component.change(load_component,[sid,component],[pair,info]);accept.click(lambda s,c,d:decide(s,c,'accepted',d),[sid,component,decisions],[current_img,decisions,decision_status]);leave.click(lambda s,c,d:decide(s,c,'left_unchanged',d),[sid,component,decisions],[current_img,decisions,decision_status]);defer.click(lambda s,c,d:decide(s,c,'deferred',d),[sid,component,decisions],[current_img,decisions,decision_status]);approve.click(finalise,[sid,decisions],[final,final_status])
-if __name__=='__main__':demo.launch(css=CSS)
+if __name__=='__main__':demo.launch(css=CSS, share=True)
