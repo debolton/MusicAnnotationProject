@@ -25,7 +25,7 @@ def finalise(sid,dec):
  z=load(sid);b=load(sid,'build');f=pd.read_csv(folder(sid)/'components.csv');missing=[int(x) for x in f.component if dec.get(str(int(x))) not in ('accepted','left_unchanged')]
  if missing:raise gr.Error(f'{len(missing)} component(s) remain unreviewed/deferred.')
  out=current(z['gray'],b['proposal'],b['labels'],dec);assert np.array_equal(out[b['mask']==0],z['gray'][b['mask']==0]);cv2.imwrite(str(folder(sid)/'approved_final_page.png'),out);return out,'Approved. Outside-mask immutability passed.'
-with gr.Blocks(title='Music Annotation HF-02.7',css=CSS) as demo:
+with gr.Blocks(title='Music Annotation HF-02.7') as demo:
  gr.Markdown('# Music Annotation Removal Assistant - HF-02.7')
  sid=gr.State('');dec=gr.State({})
  with gr.Tab('1 Upload'):
@@ -39,4 +39,4 @@ with gr.Blocks(title='Music Annotation HF-02.7',css=CSS) as demo:
   approve=gr.Button('Approve final page');final=gr.Image();fs=gr.Textbox()
  ev=go.click(generate,inp,[pkg,sid,status]);ev.then(None,pkg,None,js='(raw)=>{if(raw&&window.hitlIngest)window.hitlIngest(raw);return []}')
  bridge.change(auth,[bridge,sid],[proposal,table,comp,dec,mask_status,assets,bridge]);comp.change(pair,[sid,comp],[crop,info]);accept.click(lambda s,c,d:decide(s,c,'accepted',d),[sid,comp,dec],[cur,dec,ds]);leave.click(lambda s,c,d:decide(s,c,'left_unchanged',d),[sid,comp,dec],[cur,dec,ds]);defer.click(lambda s,c,d:decide(s,c,'deferred',d),[sid,comp,dec],[cur,dec,ds]);approve.click(finalise,[sid,dec],[final,fs])
-if __name__=='__main__':demo.launch()
+if __name__=='__main__':demo.launch(css=CSS)
