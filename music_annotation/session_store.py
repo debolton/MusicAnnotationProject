@@ -1,8 +1,13 @@
 from pathlib import Path
-import uuid, numpy as np
-ROOT=Path(__file__).resolve().parents[1]/'runtime_sessions'; ROOT.mkdir(exist_ok=True)
+import uuid,numpy as np,json
+ROOT=Path(__file__).resolve().parents[1]/'runtime_sessions';ROOT.mkdir(exist_ok=True)
 def create(gray,conf,draft):
- d=ROOT/uuid.uuid4().hex; d.mkdir(); np.savez_compressed(d/'page.npz',gray=gray,conf=conf.astype(np.float16),draft=draft); return d.name
+    sid=uuid.uuid4().hex;d=ROOT/sid;d.mkdir();np.savez_compressed(d/'page.npz',gray=gray,conf=conf.astype(np.float16),draft=draft);return sid
 def load(sid,name='page'):
- with np.load(ROOT/sid/f'{name}.npz') as z:return {k:z[k] for k in z.files}
+    p=ROOT/sid/f'{name}.npz'
+    if not p.exists():raise RuntimeError('Session expired. Generate the draft again.')
+    with np.load(p,allow_pickle=False) as z:return {k:z[k] for k in z.files}
 def save(sid,name,**arrays):np.savez_compressed(ROOT/sid/f'{name}.npz',**arrays)
+def write_json(sid,name,value):(ROOT/sid/f'{name}.json').write_text(json.dumps(value,indent=2,default=str))
+def read_json(sid,name,default=None):
+    p=ROOT/sid/f'{name}.json';return json.loads(p.read_text()) if p.exists() else default

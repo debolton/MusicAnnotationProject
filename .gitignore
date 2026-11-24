@@ -1,3 +1,4 @@
 runtime_sessions/*
+!runtime_sessions/.gitkeep
 __pycache__/
 *.pyc

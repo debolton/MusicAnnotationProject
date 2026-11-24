@@ -1,98 +1,83 @@
 [
   {
     "path": ".gitignore",
-    "bytes": 67,
-    "sha256": "8399b93d4a2ca702db12641237d9da3cfee71129456a7518ca96204e02844616"
-  },
-  {
-    "path": "FILE_MANIFEST.json",
-    "bytes": 2611,
-    "sha256": "9529ddaa465258fd50ab502a2248760bc2b25ae20897110a2edd21080592e4ff"
+    "bytes": 65,
+    "sha256": "a6fb446f7594e9f9c2bd3699871d31c7bf2713f53e32ea9f618012906d070a6b"
   },
   {
     "path": "README.md",
-    "bytes": 547,
-    "sha256": "656762b9fbc3541ca01a0f0fefa89ce0c0b80f5a11811d1104901c3758d78a7d"
+    "bytes": 436,
+    "sha256": "ef809dcdb95e35112736831e260f55c88191e795f0128aac6d2655a1f71d9a38"
   },
   {
     "path": "app.py",
-    "bytes": 5252,
-    "sha256": "efbeb05e74c068c3537c33fb8a9e5cd32f4ea55abd1e2d96bb8a89621e8291aa"
-  },
-  {
-    "path": "data/runtime/.gitkeep",
-    "bytes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-  },
-  {
-    "path": "docs/DEPLOY.md",
-    "bytes": 733,
-    "sha256": "ebf49be94d96f558c0baa6390e1587e38785d8fc25f3a34dea8517043a76f3e8"
+    "bytes": 6038,
+    "sha256": "df5a8aff75775b1d27f3a5f7aaccbccb95b4b26f2435b83da5a202598c1a7870"
   },
   {
     "path": "docs/FROZEN_MODEL_TRANSFER_CHECKLIST.md",
-    "bytes": 1575,
-    "sha256": "f2623e49fe355e161b8ff32cae0677721b4750203ae8a351d5af5f648e0e0834"
+    "bytes": 381,
+    "sha256": "6fe6d91ad3fc167d5917fd061da9d25da1bdc3ca6930f19b6de2633b61343ea2"
   },
   {
-    "path": "docs/RELEASE_NOTES_HF02.md",
-    "bytes": 742,
-    "sha256": "306e1f94946f28c4538ec50043f38af6f3b78ac72ab11e58f64ecec2e5272d4e"
+    "path": "docs/HF023_TEST.md",
+    "bytes": 456,
+    "sha256": "ee9c812ef193809855af919b3138831d6a668b845d8f9dc601c4bef8fe34524d"
   },
   {
-    "path": "frozen/observed_print_v8_2/calibrators/PUT_CALIBRATORS_HERE.txt",
-    "bytes": 44,
-    "sha256": "14b11af95c026eba07b8030697df94996d53ec3cbaa40396a395914ce681d0f3"
-  },
-  {
-    "path": "frozen/observed_print_v8_2/models/PUT_fold_pt_FILES_HERE.txt",
-    "bytes": 44,
-    "sha256": "14b11af95c026eba07b8030697df94996d53ec3cbaa40396a395914ce681d0f3"
+    "path": "frozen/observed_print_v8_2/models/OPTIONAL_V82_NOT_USED_BY_HF023.txt",
+    "bytes": 134,
+    "sha256": "a608461cde5e8a489a3d8c9c9926e7871c005812e4ad9aaf4b075cb86e4bc29c"
   },
   {
     "path": "frozen/structural_policy_v7_7f/artefacts/PUT_V77F_FILES_HERE.txt",
-    "bytes": 44,
-    "sha256": "14b11af95c026eba07b8030697df94996d53ec3cbaa40396a395914ce681d0f3"
+    "bytes": 134,
+    "sha256": "a608461cde5e8a489a3d8c9c9926e7871c005812e4ad9aaf4b075cb86e4bc29c"
   },
   {
     "path": "frozen/yolo_detector/PUT_best.pt_HERE.txt",
-    "bytes": 44,
-    "sha256": "14b11af95c026eba07b8030697df94996d53ec3cbaa40396a395914ce681d0f3"
+    "bytes": 134,
+    "sha256": "a608461cde5e8a489a3d8c9c9926e7871c005812e4ad9aaf4b075cb86e4bc29c"
   },
   {
     "path": "music_annotation/__init__.py",
     "bytes": 20,
-    "sha256": "9cc673adaf1d8d3576b3a2ac97485ac5ec193cbc9947be6bb526c2ecaf68d51d"
+    "sha256": "39ea2ebad7e1ab74a1c09f144c2435b489bc604fb5b21a1055092920351f4a6b"
   },
   {
     "path": "music_annotation/hashing.py",
-    "bytes": 290,
-    "sha256": "ca5f2698901d0ac59d10952b42059fad3320efa0289bd16df15d40f47fa6238c"
-  },
-  {
-    "path": "music_annotation/hf_pipeline.py",
-    "bytes": 1420,
-    "sha256": "65e9fd60a8ec5dc44f8a9dad8a2e794e2a570ecbe5c64e5354ff4ad2f8ffbe4d"
+    "bytes": 260,
+    "sha256": "0cf03a31a2570008c57de5992d4d827af60d0f24b7fb5f8e00088739d8e9c1dd"
   },
   {
     "path": "music_annotation/hitl_generator.py",
-    "bytes": 1320,
-    "sha256": "319a9959728c507091d48faa6169c8129da6bf0deb51d7b85ce6aefe42a8cd0e"
+    "bytes": 1210,
+    "sha256": "8e41e4c655257cbe38f014f9e7605cb4147981eebf76bfc5f75d29d0afd4252b"
   },
   {
-    "path": "music_annotation/supervised.py",
-    "bytes": 2711,
-    "sha256": "02df4db04e564454ab5cc498e3d07a263afe683b633324ce714cf202bd1f9ebb"
+    "path": "music_annotation/notebook07_canvas.py",
+    "bytes": 6985,
+    "sha256": "c40a0f8ea607056189265e1a59e30f3e1c0696133033085aaa3ce92c19196abb"
+  },
+  {
+    "path": "music_annotation/review_backend.py",
+    "bytes": 2894,
+    "sha256": "3921be10f1b6ebf43af977f5c46c3fd7ee50703fcb1df2d39adc6cfa70bd72fd"
+  },
+  {
+    "path": "music_annotation/session_store.py",
+    "bytes": 848,
+    "sha256": "c0203e2bb29c7e02528b77e53dd0e331b47ecf024b6940096a4e365226ade7e8"
   },
   {
     "path": "music_annotation/v77_policy.py",
-    "bytes": 2256,
-    "sha256": "b13c66b7d93cba65231f625316ce6ffa65f23627c72adcb6477aa88d29c2f62f"
+    "bytes": 2108,
+    "sha256": "9edb874c4e27ea25ca3099f03de26f93a264f6c897194ed1e8e734ea41f92f17"
   },
   {
     "path": "music_annotation/v78_engine.py",
-    "bytes": 3421,
-    "sha256": "524fbbf62bffff915d8f14332b9b42fcf252beacf0a529374929affe316e3800"
+    "bytes": 4451,
+    "sha256": "578d85d5da5b1a4e607937a7d66383d1a1605436d43744e0dd197afaaf0f5f8f"
   },
   {
     "path": "packages.txt",
@@ -105,13 +90,8 @@
     "sha256": "0192e799361d24835a5a76ee52d6b2ad8458e243c4e4a193b00efd66c8e285bd"
   },
   {
-    "path": "snapshots/HF-01/README.md",
-    "bytes": 168,
-    "sha256": "0abc6eb6bf22144c4dae8721566cc0547c3e9bd5fbda89bd29870c350262a3b0"
-  },
-  {
-    "path": "snapshots/HF-01/RELEASE.json",
-    "bytes": 318,
-    "sha256": "1e1610aa93f572496fb20e801e88b56d89e90e3cc119969bc321b2464ffd61dc"
+    "path": "runtime_sessions/.gitkeep",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   }
 ]
