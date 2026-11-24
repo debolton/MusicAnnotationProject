@@ -1,1 +1,8 @@
-Deploy as a Hugging Face Docker Space. Copy the verified checkpoint to `frozen/yolo_detector/best.pt`. Copy a complete V7.7F bundle to `frozen/structural_policy_v7_7f/artefacts/` when scoring is required. If the policy bundle is absent, V7.8 completes and components are returned as unscored.
+# Deploy HF-04.0
+Copy unchanged frozen artefacts into the placeholders below, then deploy as a Hugging Face Docker Space.
+
+- `frozen/yolo_detector/best.pt`
+- complete `frozen/p_print_provider_v8_2f/` bundle
+- complete `frozen/notebook52f_remove_bundle/` bundle
+
+Do not reconstruct, retrain, recalibrate, or alter either downstream bundle. The included V8.9 operator validates bundle hashes/schema/policy at load. CPU is accepted by the operator but GPU is preferable for page-scale p_print CNN inference.

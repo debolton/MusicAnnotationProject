@@ -1,7 +1,0 @@
-59P1 V8.2 observed-print deployment freeze
-
-Run: /content/drive/MyDrive/MusicAnnotationProject/observed_print_deployment_freeze_v8_2/20261112_085014_notebook59p1_v82_observed_print_freeze
-Policy ID: V8_2_OBSERVED_PRINT_DEPLOYMENT_1DE514DA74072FC1
-Compatibility ID: 1de514da74072fc184b75926c34023696fd0344c772ae712e2811080813e7885
-
-Runtime requires bundle/observed_print_model.pt, bundle/observed_print_calibrator.joblib and replay/replay_test.json.

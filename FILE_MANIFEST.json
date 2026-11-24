@@ -1,37 +1,97 @@
 [
   {
+    "path": "Dockerfile",
+    "bytes": 338,
+    "sha256": "3b1777156d8c969d4712619745f1010ed464fa1cda611a3a12627083b31f9f46"
+  },
+  {
     "path": "README.md",
-    "bytes": 354,
-    "sha256": "b69c23a7c2f1b086a763a080ebcd767efadfda3991485f3820987fa8181d89fb"
+    "bytes": 231,
+    "sha256": "c16560614a87e7677e53096323043f0afa481522001601e021db5ba0ef570530"
   },
   {
-    "path": "app/component_review.py",
-    "bytes": 3215,
-    "sha256": "85eadb4a1eab46bbb652c93525d7d30c432253df3c1d6d0a66ad4b99c5c398a2"
+    "path": "app/__init__.py",
+    "bytes": 20,
+    "sha256": "df7bb78a01712ffa437e98c7f079921a466c000749991cba085f7429adad0ac6"
   },
   {
-    "path": "app/main_hf033_routes.py",
-    "bytes": 1523,
-    "sha256": "629636cbfb4d9aa01bb6350db43e3f15b3b9e3c546fbab65c96b9230e3e8e89a"
+    "path": "app/main.py",
+    "bytes": 7068,
+    "sha256": "0a40d0f923e4f08ab332f276448c29d8ead79291165af16c494fdca878bfb7d3"
   },
   {
-    "path": "app/static/review.css",
-    "bytes": 1202,
-    "sha256": "ca5eb6bd2ef19883c87c73c6aac5cffba47d8734a10260e795246f5d3a8135a9"
+    "path": "app/static/app.js",
+    "bytes": 4082,
+    "sha256": "b32a6850e5262c68b3b31552468cac0750f80926537c3008f841941d0d41d672"
   },
   {
-    "path": "app/static/review.js",
-    "bytes": 2826,
-    "sha256": "4bec8a89d81490ef5a0dd2be8122ca875abbc4835bcb94d6a20ca0a81266af88"
+    "path": "app/static/style.css",
+    "bytes": 1000,
+    "sha256": "d992c25cefa4b4b465a3e87ba2d7d2616ebdd158998685195ca1c1672e23e8af"
   },
   {
-    "path": "app/templates/component_review_fragment.html",
-    "bytes": 1406,
-    "sha256": "9cc48979d3ce9ae82fac59b0cd8ef9b03d2452c6f0cf6dcd07f3ccbd3df286d1"
+    "path": "app/store.py",
+    "bytes": 917,
+    "sha256": "8b2717c58c0f4fcf8fa0540362571eb1538e1a0e81f8763edee962cc82606998"
   },
   {
-    "path": "docs/INSTALL.md",
-    "bytes": 812,
-    "sha256": "02ed955d95479b799a766939ce5f9537675eb1ae2abfc562be15e67203515324"
+    "path": "app/templates/index.html",
+    "bytes": 1777,
+    "sha256": "800e914c8424aa639d3bf3d0672682e754ffc1189df3a784fd30d0026f01feb2"
+  },
+  {
+    "path": "app/yolo.py",
+    "bytes": 839,
+    "sha256": "df450c5a85ff7d43a9848f150a5e3cab5f9a45fce8e94a10b3671eda3c27169e"
+  },
+  {
+    "path": "docs/DEPLOY.md",
+    "bytes": 505,
+    "sha256": "2f5ba881fef4633e62fd3e60313ceb6e5a8594fa9b53b983101278cbfa4b3f9e"
+  },
+  {
+    "path": "docs/TEST.md",
+    "bytes": 375,
+    "sha256": "148d7fa5efa13ff3f58b418f7fa3ccaa93bce072016c1146643565bbdf1e3c04"
+  },
+  {
+    "path": "frozen/__init__.py",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "frozen/notebook52f_remove_bundle/PUT_COMPLETE_REMOVE_BUNDLE_HERE.txt",
+    "bytes": 58,
+    "sha256": "0a1461a1951845f82d0915e62de3660f241e89ca936dace4c83ebf2f05ac3334"
+  },
+  {
+    "path": "frozen/p_print_provider_v8_2f/PUT_COMPLETE_P_PRINT_BUNDLE_HERE.txt",
+    "bytes": 61,
+    "sha256": "a7e242ce31c40b2c4197d4664421d2bb50360ae5ac6aa658b407d8d566407f2e"
+  },
+  {
+    "path": "frozen/v8_9/__init__.py",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "frozen/v8_9/v8_9_operator.py",
+    "bytes": 15346,
+    "sha256": "506f977d80ede4beeac6c59dbd7f73b3ea71c60e79b5a20b0223b5daee17e32a"
+  },
+  {
+    "path": "frozen/yolo_detector/PUT_best.pt_HERE.txt",
+    "bytes": 28,
+    "sha256": "58a63a3616761048bdf4221ce4e074b6473c09e0bda7c5b7a2200e90d618d76e"
+  },
+  {
+    "path": "requirements.txt",
+    "bytes": 149,
+    "sha256": "4908862a140517fbe1dd84af0e922520f2abfb5982955ed7094b5c059e845bb3"
+  },
+  {
+    "path": "runtime_sessions/.gitkeep",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   }
 ]
