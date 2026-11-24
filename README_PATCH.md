@@ -1,13 +1,8 @@
-# HF-02.2 patch
-Overlay this patch on the current HF-02 repository.
+# HF-02.4 direct-event patch
+Replace the HF-02.3 root `app.py` with this file. Keep all other HF-02.3 files and frozen artefacts.
 
-Workflow:
-1. Upload only.
-2. Generate YOLO draft server-side.
-3. Automatically navigate to one lightweight canvas.
-4. Switch one canvas between Mask, Confidence and Original.
-5. Pan / ADD / ERASE / Undo / Redo / Reset.
-6. Authorise `(draft OR ADD) AND NOT ERASE`.
-7. Automatically navigate to V7.8/V7.7F component review.
+The load path is now `generate Python -> page_package output -> .then(js=LOAD_JS, inputs=page_package)`.
+The return path is `Capture reviewed mask -> js=EXPORT_JS -> add_mask/erase_mask outputs -> Authorise reviewed mask Python`.
+No MutationObserver and no JavaScript query of Gradio textbox DOM is used by app.py.
 
-The upload tab returns no overlay or heatmap. Full-resolution arrays remain in `runtime_sessions`; the browser receives one preview and compact stroke JSON.
+For the canvas module, `window.HITLReviewer.loadPage(package)` and `window.HITLReviewer.exportMasks()` must be exposed. If the current HF-02.3 `notebook07_canvas.py` does not expose those methods, use the included canvas replacement in the full package rather than this one-file patch.
