@@ -1,5 +1,3 @@
-# Music Annotation shared Python library
-
 ---
 title: Music Annotation Project
 emoji: 🎼
@@ -8,6 +6,8 @@ colorTo: green
 app_file: app.py
 pinned: false
 ---
+
+# Music Annotation shared Python library
 
 This extraction centralises the canonical V7.8 correction engine, V8.2 tensor/CNN definitions, policy helpers, metrics, hashing and Pilot 09 component-signature logic.
 
