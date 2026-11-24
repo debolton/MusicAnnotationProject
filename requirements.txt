@@ -1,11 +1,10 @@
+gradio==6.0.1
 numpy
-pandas
 opencv-python-headless
+Pillow
+torch
+ultralytics
+pandas
 scikit-learn
 joblib
-torch
-torchvision
 pyarrow
-matplotlib
-gradio
-pillow
