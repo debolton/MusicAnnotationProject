@@ -38,7 +38,30 @@ CPU-only. Notebook-07-style browser canvas with a 1200px review package; full-re
         inp=gr.Image(type='numpy',label='Annotated page');go=gr.Button('Generate YOLO draft',variant='primary');status=gr.Textbox(interactive=False)
     with gr.Tab('2 Mask review',id='mask'):
         _canvas=gr.HTML(CANVAS_HTML,elem_id='canvas-shell',js_on_load=CANVAS_JS)
-        page_package=gr.Textbox(visible=False,elem_id='page-package');add_mask=gr.Textbox(visible=False,elem_id='add-mask-out');erase_mask=gr.Textbox(visible=False,elem_id='erase-mask-out');auth=gr.Button('Authorise reviewed mask',variant='primary');mask_status=gr.Textbox(interactive=False)
+
+    #doesn't have to look good, just has to work at this stage!
+    page_package = gr.Textbox(
+        visible=True,
+        show_label=False,
+        container=False,
+        elem_id="page-package"
+    )
+
+    add_mask = gr.Textbox(
+        visible=True,
+        show_label=False,
+        container=False,
+        elem_id="add-mask-out"
+    )
+
+    erase_mask = gr.Textbox(
+        visible=True,
+        show_label=False,
+        container=False,
+        elem_id="erase-mask-out"
+    )    
+
+    auth=gr.Button('Authorise reviewed mask',variant='primary');mask_status=gr.Textbox(interactive=False)
     with gr.Tab('3 Component review',id='components'):
         proposal=gr.Image(label='V7.8 proposal',height=600);table=gr.Dataframe(interactive=False);component=gr.Dropdown(label='Component');pair=gr.Image(label='ORIGINAL | PROPOSED',height=520);info=gr.Textbox(interactive=False);current_img=gr.Image(label='Current reviewed result',height=600);decision_status=gr.Textbox(interactive=False)
         with gr.Row():accept=gr.Button('Accept correction',variant='primary');leave=gr.Button('Leave unchanged');defer=gr.Button('Defer')
