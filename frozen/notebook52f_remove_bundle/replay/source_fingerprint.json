@@ -1,0 +1,15 @@
+{
+  "created_utc": "2026-11-02T12:37:19.781761+00:00",
+  "source_fingerprint": "37fe961227c23c821f222fa4a06e71294514b85d26916da23587225c3a2dd889",
+  "payload": {
+    "authoritative_notebook50_run": "/content/drive/MyDrive/MusicAnnotationProject/observable_residual_mask_m5_v8_7/20261101_215506_notebook50_v8_7_asymmetric_m5",
+    "source_experiment_identity_sha256": "64a73eab96e26a06841d9711c0276d737d3cbeabd47acb8805e694e783e4d7ff",
+    "source_verdict_sha256": "eb3f5363c8b575c19ee1e096ed85625119049f12bc816cd49e7f011c2f055b66",
+    "predictor_schema_sha256": "baaf757534792edb22038eacad89cde1bb6723f460ab848abe2dbcafcf6315e7",
+    "golden_master_csv_sha256": "0320aab4dcd1b11e06c1980842ada56c20a65e9969b8b5df3cfa3a258a463a47",
+    "policy_id": "79ce74320bcd73633899aa5e8873e8092d1adce1e368c34e395334ca05e2957d"
+  },
+  "prior_notebook52_run": "/content/drive/MyDrive/MusicAnnotationProject/m5_remove_policy_freeze_v8_8a/20261102_123503_notebook52_v8_8a",
+  "exact_match_to_prior": true,
+  "interpretation": "None means first candidate. True means unchanged second-run source identity. False is a stop condition before Notebook 53."
+}

@@ -1,0 +1,33 @@
+{
+  "verdict": "M5_REMOVE_ONLY_READY_FOR_NOTEBOOK51_CROSSOVER",
+  "target_passes": {
+    "REMOVE": true,
+    "PROTECT": false
+  },
+  "gates": {
+    "REMOVE": {
+      "finite_predictions": true,
+      "zero_catastrophic_regions": true,
+      "false_rate": true,
+      "wilson95_upper": true,
+      "minimum_selected_pixels": true,
+      "minimum_pages": true,
+      "minimum_source_groups": true
+    },
+    "PROTECT": {
+      "finite_predictions": true,
+      "zero_catastrophic_regions": true,
+      "false_rate": true,
+      "wilson95_upper": false,
+      "minimum_selected_pixels": true,
+      "minimum_pages": true,
+      "minimum_source_groups": true
+    }
+  },
+  "thresholds": {
+    "REMOVE": 0.995,
+    "PROTECT": 0.999
+  },
+  "development_only": true,
+  "promotion_authority": false
+}

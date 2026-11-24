@@ -1,0 +1,23 @@
+{
+  "calibration_from_complete_oof": true,
+  "created_utc": "2026-11-17T12:12:11.062283+00:00",
+  "full_development_refit": true,
+  "independent_data_used": false,
+  "parameters_changed": false,
+  "raw_oof_sha256": "e1fa988ba23fb5029d5dfc526646782498a73653e80bb567dad4c5ecfd8fded9",
+  "software": {
+    "cuda": "13.0",
+    "gpu": "Tesla T4",
+    "numpy": "2.4.6",
+    "opencv": "4.14.0",
+    "pandas": "2.2.3",
+    "platform": "Linux-6.6.159+-x86_64-with-glibc2.39",
+    "python": "3.13.16 (main, Oct  1 2026, 15:40:24) [GCC 13.3.0]",
+    "sklearn": "1.6.1",
+    "torch": "2.14.1+cu130"
+  },
+  "source_identity_sha256": "6a483f57b4aa70f0580c1c71e01c2fa01188d79621dfe356e12d665cfc019163",
+  "source_schema_sha256": "9a025201d6c94a8bf482f6c9d4425a9e8c15ca126a8eae92b8f616dd4709982e",
+  "source_v82_run": "/content/drive/MyDrive/MusicAnnotationProject/observed_print_classifier_v8_2/20261018_082545_v8_2_development_whole_page",
+  "stable_manifest_sha256": "4e32befc3d8b3ecb64655a67fcf52f80ee403fe638861fa227a41d5ac9b01c4e"
+}

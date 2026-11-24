@@ -1,0 +1,4 @@
+{
+  "REMOVE": "local_nonlinear",
+  "PROTECT": "scalar_logistic"
+}

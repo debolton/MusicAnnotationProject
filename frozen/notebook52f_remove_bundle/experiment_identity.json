@@ -1,0 +1,59 @@
+{
+  "created_utc": "2026-11-01T21:56:26.635550+00:00",
+  "version": "8.7-notebook50-asymmetric-m5",
+  "development_only": true,
+  "promotion_authority": false,
+  "predictor_schema_sha256": "baaf757534792edb22038eacad89cde1bb6723f460ab848abe2dbcafcf6315e7",
+  "fold_manifest_sha256": "49cae0356e4972abbb5271fc6dfd03432d817c77b394f82bd49d97dcb953453c",
+  "selected_models": {
+    "REMOVE": "local_nonlinear",
+    "PROTECT": "scalar_logistic"
+  },
+  "constants": {
+    "remove_threshold": 0.995,
+    "protect_threshold": 0.999,
+    "connectivity": 8,
+    "min_remove_run": 2,
+    "min_protect_run": 2
+  },
+  "verdict": {
+    "verdict": "M5_REMOVE_ONLY_READY_FOR_NOTEBOOK51_CROSSOVER",
+    "target_passes": {
+      "REMOVE": true,
+      "PROTECT": false
+    },
+    "gates": {
+      "REMOVE": {
+        "finite_predictions": true,
+        "zero_catastrophic_regions": true,
+        "false_rate": true,
+        "wilson95_upper": true,
+        "minimum_selected_pixels": true,
+        "minimum_pages": true,
+        "minimum_source_groups": true
+      },
+      "PROTECT": {
+        "finite_predictions": true,
+        "zero_catastrophic_regions": true,
+        "false_rate": true,
+        "wilson95_upper": false,
+        "minimum_selected_pixels": true,
+        "minimum_pages": true,
+        "minimum_source_groups": true
+      }
+    },
+    "thresholds": {
+      "REMOVE": 0.995,
+      "PROTECT": 0.999
+    },
+    "development_only": true,
+    "promotion_authority": false
+  },
+  "software": {
+    "python": "3.13.16 (main, Oct  1 2026, 15:40:24) [GCC 13.3.0]",
+    "numpy": "2.1.3",
+    "pandas": "2.2.3",
+    "opencv": "4.14.0",
+    "platform": "Linux-6.6.159+-x86_64-with-glibc2.39"
+  }
+}

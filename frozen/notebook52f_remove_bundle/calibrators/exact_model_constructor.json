@@ -1,0 +1,18 @@
+{
+  "architecture": "Conv11-24-BN-pool, Conv24-48-BN-pool, Conv48-64, adaptive average pool, Linear64-2",
+  "channels": [
+    "obs",
+    "norm",
+    "mask",
+    "depth",
+    "horizontal",
+    "vertical",
+    "compact",
+    "preserve",
+    "remove",
+    "ambiguous",
+    "edge"
+  ],
+  "class": "TopologyCNN",
+  "patch": 33
+}
