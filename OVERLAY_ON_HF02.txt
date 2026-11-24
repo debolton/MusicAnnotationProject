@@ -1,0 +1,1 @@
+Overlay this patch onto the working HF-02 repository. Retain existing music_annotation/hitl_generator.py, v78_engine.py, v77_policy.py and frozen model folders.

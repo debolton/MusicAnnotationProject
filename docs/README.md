@@ -1,0 +1,1 @@
+HF-02.3 uses the actual Notebook 07 V12 single-canvas pattern: gr.HTML(..., js_on_load=CANVAS_JS), browser-side pan/add/erase/undo/redo, and hidden Gradio bridge fields. The only intentional mask-review changes are 1200px review packaging and changing Save+next to Authorise mask. Full-resolution arrays stay server-side and V7.8/V7.7F run after authorisation.
