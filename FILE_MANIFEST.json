@@ -5,14 +5,19 @@
     "sha256": "8399b93d4a2ca702db12641237d9da3cfee71129456a7518ca96204e02844616"
   },
   {
+    "path": "FILE_MANIFEST.json",
+    "bytes": 2611,
+    "sha256": "9529ddaa465258fd50ab502a2248760bc2b25ae20897110a2edd21080592e4ff"
+  },
+  {
     "path": "README.md",
-    "bytes": 1070,
-    "sha256": "69d7c93178f2f04a70886a808dbb9723f45f2e0570a4c91bcf1597b96b76cb64"
+    "bytes": 547,
+    "sha256": "656762b9fbc3541ca01a0f0fefa89ce0c0b80f5a11811d1104901c3758d78a7d"
   },
   {
     "path": "app.py",
-    "bytes": 971,
-    "sha256": "9481220441782f9eb4e52d58673c5750a4878ca90dc4036009b4be5121a3a0d6"
+    "bytes": 5252,
+    "sha256": "efbeb05e74c068c3537c33fb8a9e5cd32f4ea55abd1e2d96bb8a89621e8291aa"
   },
   {
     "path": "data/runtime/.gitkeep",
@@ -28,6 +33,11 @@
     "path": "docs/FROZEN_MODEL_TRANSFER_CHECKLIST.md",
     "bytes": 1575,
     "sha256": "f2623e49fe355e161b8ff32cae0677721b4750203ae8a351d5af5f648e0e0834"
+  },
+  {
+    "path": "docs/RELEASE_NOTES_HF02.md",
+    "bytes": 742,
+    "sha256": "306e1f94946f28c4538ec50043f38af6f3b78ac72ab11e58f64ecec2e5272d4e"
   },
   {
     "path": "frozen/observed_print_v8_2/calibrators/PUT_CALIBRATORS_HERE.txt",
@@ -56,8 +66,8 @@
   },
   {
     "path": "music_annotation/hashing.py",
-    "bytes": 309,
-    "sha256": "46badb2d4f04b02e37ee867ce2d9367bdf529e54ff90df1f8ff696ec287852e9"
+    "bytes": 290,
+    "sha256": "ca5f2698901d0ac59d10952b42059fad3320efa0289bd16df15d40f47fa6238c"
   },
   {
     "path": "music_annotation/hf_pipeline.py",
@@ -68,6 +78,16 @@
     "path": "music_annotation/hitl_generator.py",
     "bytes": 1320,
     "sha256": "319a9959728c507091d48faa6169c8129da6bf0deb51d7b85ce6aefe42a8cd0e"
+  },
+  {
+    "path": "music_annotation/supervised.py",
+    "bytes": 2711,
+    "sha256": "02df4db04e564454ab5cc498e3d07a263afe683b633324ce714cf202bd1f9ebb"
+  },
+  {
+    "path": "music_annotation/v77_policy.py",
+    "bytes": 2256,
+    "sha256": "b13c66b7d93cba65231f625316ce6ffa65f23627c72adcb6477aa88d29c2f62f"
   },
   {
     "path": "music_annotation/v78_engine.py",
@@ -81,7 +101,17 @@
   },
   {
     "path": "requirements.txt",
-    "bytes": 103,
-    "sha256": "f6005fc2f84d0a0c1196e54b07ec5f5eec7df4da7059af0c5fec122d50de1ec6"
+    "bytes": 95,
+    "sha256": "0192e799361d24835a5a76ee52d6b2ad8458e243c4e4a193b00efd66c8e285bd"
+  },
+  {
+    "path": "snapshots/HF-01/README.md",
+    "bytes": 168,
+    "sha256": "0abc6eb6bf22144c4dae8721566cc0547c3e9bd5fbda89bd29870c350262a3b0"
+  },
+  {
+    "path": "snapshots/HF-01/RELEASE.json",
+    "bytes": 318,
+    "sha256": "1e1610aa93f572496fb20e801e88b56d89e90e3cc119969bc321b2464ffd61dc"
   }
 ]
