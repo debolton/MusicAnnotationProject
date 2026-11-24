@@ -1,0 +1,1 @@
+Make 1-3 strokes per commit. Complete at least 10 commits, mixing ADD and ERASE, then undo once and download the package. Rebooting Safari may help available memory, but the repeated editor reset is the actual stability control.

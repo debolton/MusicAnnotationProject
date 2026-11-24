@@ -1,73 +1,13 @@
 [
   {
     "path": "README.md",
-    "bytes": 448,
-    "sha256": "236c3b8ab89b554e7b134cbca5ed728912be765ffad8f79f6937a23cfb975b5b"
+    "bytes": 227,
+    "sha256": "503b407b3c4af6ef294baea4a057847319f789d9cff069185d97bda2250b50b9"
   },
   {
     "path": "app.py",
-    "bytes": 6275,
-    "sha256": "375ef80d6c67149fb98532697e3ddceb7e45feb219f500c55f08469c8a22d73e"
-  },
-  {
-    "path": "docs/DEPLOY.md",
-    "bytes": 161,
-    "sha256": "e8db51c6cb2e5a1ad516376448359dbc187f30e164b2fae7299179f03ebde7f1"
-  },
-  {
-    "path": "docs/TEST.md",
-    "bytes": 503,
-    "sha256": "b2d91605db78eaa1d98029e6e6715a6f78d07ef9aed8677074f3042de02ff906"
-  },
-  {
-    "path": "frozen/structural_policy_v7_7f/artefacts/PUT_V77F_FILES_HERE.txt",
-    "bytes": 120,
-    "sha256": "4ec550590d0a4dc87708441761b839febbf575f6f3bacc52838ba2f1c83867ff"
-  },
-  {
-    "path": "frozen/yolo_detector/PUT_best.pt_HERE.txt",
-    "bytes": 32,
-    "sha256": "e40cf4635b40609cdd86ac1240f21e395f85d2f9b23df1070a65f8b8dde81f20"
-  },
-  {
-    "path": "music_annotation/__init__.py",
-    "bytes": 20,
-    "sha256": "9d6f8bfcc08d7188e60a3d023cd0aa2ea838e294bb100b241c2f35d5b41f1aab"
-  },
-  {
-    "path": "music_annotation/canonical_v78.py",
-    "bytes": 4933,
-    "sha256": "83e315e874388009d249def95bebca85a9d378030b73fcd3b3a308595cfac1d0"
-  },
-  {
-    "path": "music_annotation/hashing.py",
-    "bytes": 189,
-    "sha256": "97070352ab2131ab56be46855ba01b827477f736dd8af117d5dbed1354ea6926"
-  },
-  {
-    "path": "music_annotation/hitl_generator.py",
-    "bytes": 1263,
-    "sha256": "918eb37715ccb61cb0376156cf8af2ab3c96b330773f85db9972279a8076fead"
-  },
-  {
-    "path": "music_annotation/image_overlay_ui.py",
-    "bytes": 4380,
-    "sha256": "06335ac44e2e9144575ca5f46d7adf35663b18900ebb15bde1e051ede16e291c"
-  },
-  {
-    "path": "music_annotation/reviewer_backend.py",
-    "bytes": 4127,
-    "sha256": "68af712c0ff3cbbbe2cd236322e24b358e251a5d78fafab9b987332031095d25"
-  },
-  {
-    "path": "music_annotation/session_store.py",
-    "bytes": 877,
-    "sha256": "8896c1faabea80b8b61d3c753105ff2a217f45f6c928e33d602777fe39bdaa62"
-  },
-  {
-    "path": "music_annotation/v77f.py",
-    "bytes": 2343,
-    "sha256": "4c1f281934077605db395e9acf1cdd921e15c29dc1752ecf159bcdcb8e286671"
+    "bytes": 6327,
+    "sha256": "3a7aff05a2bdb744c57059cd7e25c323e41970a6344618a34dcb6cc4fd60da35"
   },
   {
     "path": "packages.txt",
@@ -76,12 +16,27 @@
   },
   {
     "path": "requirements.txt",
-    "bytes": 95,
-    "sha256": "0192e799361d24835a5a76ee52d6b2ad8458e243c4e4a193b00efd66c8e285bd"
+    "bytes": 68,
+    "sha256": "9430167b631e5bf14e1e671c0dac25876b027557d4bcd18a9f06324fc503e377"
+  },
+  {
+    "path": "docs/DEPLOY.md",
+    "bytes": 124,
+    "sha256": "cb35e93e7dd82ab20bc521d379da0e60e6378300b156e6643525e5e02b1e23da"
+  },
+  {
+    "path": "docs/IPAD_TEST.md",
+    "bytes": 229,
+    "sha256": "97e5647efce97446ad668a6a625a0e672cb7f5605f2a588da272fbe6b88f20d9"
   },
   {
     "path": "runtime_sessions/.gitkeep",
     "bytes": 0,
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "frozen/yolo_detector/PUT_best.pt_HERE.txt",
+    "bytes": 41,
+    "sha256": "b958e6ed97d6d326ea84e9376ad5e60a4815976b419bd3b2f39b308a37c05fc8"
   }
 ]
