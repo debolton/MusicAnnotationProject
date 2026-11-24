@@ -1,6 +1,7 @@
-# iPad test
-1. Generate Page 28.
-2. Open Mask review. The page should be visible at Fit page without resizing the canvas.
-3. Use NAVIGATE plus arrows for movement; ADD and ERASE are mutually exclusive brush modes.
-4. Test 20 strokes, Undo/Redo, fixed 100/150/200% zoom.
-5. Authorise. Download `training_and_audit_artefacts.zip` and confirm it contains the annotated page and reviewed mask.
+# Page 28 test
+1. Upload and generate.
+2. Open Mask review. The underlying page must appear because it is an ordinary `<img>`.
+3. Switch Mask / Original / Mask only / Confidence.
+4. Make at least 20 ADD/ERASE strokes and Undo/Redo.
+5. Authorise and download `training_and_audit_artefacts.zip`.
+6. Confirm the ZIP contains the annotated page, raw confidence, YOLO draft, additions, erasures, reviewed undilated authoritative mask, dilation-2 mask, Telea, geometry_t80, route maps and component evidence.

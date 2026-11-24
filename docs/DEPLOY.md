@@ -1,2 +1,2 @@
 # Deploy
-Copy the existing verified `best.pt` and V7.7F artefact files into the included frozen directories. Upload the contents of this folder to the Hugging Face Space root. Use CPU Basic.
+Copy the verified `best.pt` and complete V7.7F artefact bundle into `frozen/`, then upload this repository's contents to the Space root. Use CPU Basic.
