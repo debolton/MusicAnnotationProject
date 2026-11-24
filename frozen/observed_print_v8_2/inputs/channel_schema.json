@@ -1,0 +1,23 @@
+{
+  "patch": 33,
+  "channels": [
+    "obs",
+    "norm",
+    "mask",
+    "depth",
+    "horizontal",
+    "vertical",
+    "compact",
+    "preserve",
+    "remove",
+    "ambiguous",
+    "edge"
+  ],
+  "dtype": "float32",
+  "normalisation": {
+    "obs": "divide_255",
+    "norm": "divide_255",
+    "other": "native_float32"
+  },
+  "padding": "reflect"
+}
