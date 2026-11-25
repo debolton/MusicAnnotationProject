@@ -32,13 +32,13 @@ def gate():
  print("A5 freeze manifest SHA-256:", sha(freeze_path))
  
  print("A5 freeze manifest keys:", sorted(f.keys()))
- print("A5 replay_passed raw:", repr(f.get("replay_passed")))
+ print("A5 replay_passed raw:", repr(f.get("payload", {}).get("replay_passed")))
  print("A5 replay raw:", repr(f.get("replay")))
 
  if f.get('policy_id')!=POLICY_ID:
   raise RuntimeError('A5 freeze failed')
- print(f'Replay passed status: {f.get('replay_passed')}')
- if replay is not True:
+ print(f'Replay passed status: {f.get('paylo')}')
+ if f.get("payload", {}).get("replay_passed") is not True:
   raise RuntimeError('Replay gate failed')
  return p
 POLICY=gate()
