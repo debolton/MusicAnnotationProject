@@ -27,19 +27,8 @@ def gate():
  
  f=json.loads((BUNDLE/'freeze_manifest.json').read_text()); 
  
- freeze_path = BUNDLE/'freeze_manifest.json'
- print("A5 freeze manifest:", freeze_path.resolve())
- print("A5 freeze manifest SHA-256:", sha(freeze_path))
- 
- print("A5 freeze manifest keys:", sorted(f.keys()))
- print("A5 replay_passed raw:", repr(f.get("payload", {}).get("replay_passed")))
- print("A5 replay raw:", repr(f.get("replay")))
-
- if f.get('policy_id')!=POLICY_ID:
-  raise RuntimeError('A5 freeze failed')
- print(f'Replay passed status: {f.get('paylo')}')
- if f.get("payload", {}).get("replay_passed") is not True:
-  raise RuntimeError('Replay gate failed')
+ if f.get('policy_id')!=POLICY_ID or f.get("payload", {}).get("replay_passed") is not True:
+  raise RuntimeError('A5 freeze or replay gate failed')
  return p
 POLICY=gate()
 if __name__=='__main__':print(json.dumps({'ok':True,'policy_id':POLICY_ID},indent=2))
