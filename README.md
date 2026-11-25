@@ -12,3 +12,23 @@ Docker/FastAPI and the HF-04.0 mobile mask editor are retained. The backend recr
 ## HF-04.3 additions
 
 HF-04.3 makes the Ardross A5 frozen replay a mandatory startup test and adds a separate diagnostic for comparing HF-generated V7.8 channels with the historical replay arrays. See `docs/HF043.md`.
+
+# HF-04.4 startup-evidence endpoint
+
+Adds `GET /startup-evidence` to the existing Docker/FastAPI application.
+
+After both mandatory startup gates have passed, the endpoint returns `hf_04_4_startup_evidence.zip` containing all files under `startup_evidence/`, including:
+
+- `ardross_v78_equivalence/channel_comparison.csv`
+- `ardross_v78_equivalence/summary.json`
+- any `*_absdiff.png` files generated if a future channel comparison differs
+
+If the evidence has not been generated, the route fails closed with HTTP 503.
+
+Apply from the repository root:
+
+```bash
+python apply_startup_evidence_endpoint.py
+```
+
+Then rebuild the Space and visit `/startup-evidence`.
