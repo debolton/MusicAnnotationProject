@@ -33,6 +33,30 @@ def _read_image(name, flags=cv2.IMREAD_GRAYSCALE):
     if a is None: raise ReplayFailure(f'Unreadable replay image: {p}')
     return a
 
+def _read_matrix(path: Path, dtype=np.float32):
+    try:
+        a = np.loadtxt(
+            path,
+            delimiter=',',
+            dtype=dtype,
+        )
+    except Exception as e:
+        raise ReplayFailure(
+            f'Cannot read replay matrix {path}: {e}'
+        )
+
+    if a.ndim != 2:
+        raise ReplayFailure(
+            f'{path.name}: expected 2-D matrix, got shape {a.shape}'
+        )
+
+    if not np.isfinite(a).all():
+        raise ReplayFailure(
+            f'{path.name}: contains non-finite values'
+        )
+
+    return a
+
 def load_replay():
     required=['obs.png','norm.png','mask.png','depth.csv','horizontal.png','vertical.png','compact.png','preserve.png','remove.png','ambiguous.png','edge.png','x.csv','y.csv','expected_probability.csv','expected_provisional.csv','expected_final.csv']
     missing=[x for x in required if not (ARDROSS/x).exists()]
@@ -41,8 +65,21 @@ def load_replay():
     h,w=arrays['obs'].shape
     for k,a in arrays.items():
         if a.shape!=(h,w): raise ReplayFailure(f'Ardross {k} shape {a.shape} != {(h,w)}')
-    depth=_read_vector(ARDROSS/'depth.csv')
-    if depth.size!=h*w: raise ReplayFailure(f'Ardross depth rows {depth.size} != image pixels {h*w}')
+    
+    depth = _read_matrix(
+        ARDROSS / 'depth.csv',
+        np.float32,
+    )
+
+    if depth.shape != (h, w):
+        raise ReplayFailure(
+            'Ardross depth shape mismatch: '
+            f'depth={depth.shape}, '
+            f'obs={(h, w)}'
+        )
+
+    arrays['depth'] = depth
+        
     arrays['depth']=depth.reshape(h,w).astype(np.float32)
     arrays['obs']=arrays['obs'].astype(np.float32)/255.0
     arrays['norm']=arrays['norm'].astype(np.float32)/255.0
