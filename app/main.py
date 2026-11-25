@@ -83,6 +83,8 @@ def finish(sid:str):
 def download(sid:str):return FileResponse(store.folder(sid)/'hf_04_2_training_and_audit.zip',filename='hf_04_2_training_and_audit.zip')
 @app.get('/health')
 def health():return {'ok':True,'version':'4.2.0','policy_id':'A5-v1-print-p0980-margin0960-run2'}
+
+STARTUP_EVIDENCE_DIR = Path(__file__).resolve().parents[1] / "startup_evidence"
 @app.get("/startup-evidence")
 def download_startup_evidence():
     root = STARTUP_EVIDENCE_DIR
