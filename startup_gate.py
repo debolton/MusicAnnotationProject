@@ -1,10 +1,13 @@
 from pathlib import Path
 import csv,hashlib,json,platform
 from importlib import metadata
+from app.commissioning_evidence import write_commissioning_evidence
 ROOT=Path(__file__).resolve().parent
 BUNDLE=ROOT/'frozen/a5_v1'
 POLICY_ID='A5-v1-print-p0980-margin0960-run2'
 IGNORE_NAMES={'.DS_Store','Thumbs.db'}
+
+
 def generated(rel):
     p=Path(rel); return '__pycache__' in p.parts or p.suffix.lower() in {'.pyc','.pyo'} or p.name in IGNORE_NAMES
 def sha(p):
@@ -33,5 +36,7 @@ def gate():
     v78=run_ardross_v78_equivalence()  # Writes channel_comparison.csv and blocks on mismatch.
     return policy,operator.startup_replay,v78
 POLICY,ARDROSS_REPLAY,ARDROSS_V78_EQUIVALENCE=gate()
+startup_verdict = write_commissioning_evidence(STARTUP_EVIDENCE,a5_replay_result,v78_summary)
+print("HF-04.4 commissioning startup verdict:", startup_verdict)
 if __name__=='__main__':
     print(json.dumps({'ready':True,'version':'HF-04.4','policy_id':POLICY_ID,'python':platform.python_version(),'ardross_a5_replay':ARDROSS_REPLAY,'ardross_v78_equivalence':ARDROSS_V78_EQUIVALENCE},indent=2))

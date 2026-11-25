@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import datetime,timezone
-import io,json,zipfile,cv2,numpy as np
+import io,json,zipfile,shutil,cv2,numpy as np
 from fastapi import FastAPI,UploadFile,File,HTTPException
 from fastapi.responses import HTMLResponse,Response,FileResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -84,36 +84,44 @@ def download(sid:str):return FileResponse(store.folder(sid)/'hf_04_2_training_an
 @app.get('/health')
 def health():return {'ok':True,'version':'4.2.0','policy_id':'A5-v1-print-p0980-margin0960-run2'}
 
-STARTUP_EVIDENCE_DIR = Path(__file__).resolve().parents[1] / "startup_evidence"
+STARTUP_EVIDENCE_DIR = Path("startup_evidence")
+
 @app.get("/startup-evidence")
 def download_startup_evidence():
     root = STARTUP_EVIDENCE_DIR
-    required = [
-        root / "ardross_v78_equivalence" / "channel_comparison.csv",
-        root / "ardross_v78_equivalence" / "summary.json",
-    ]
-    missing = [str(p.relative_to(root)) for p in required if not p.exists()]
+    verdict = root / "startup_verdict.json"
+    replay = root / "ardross_a5_replay" / "replay_result.json"
+    v78_summary = root / "ardross_v78_equivalence" / "summary.json"
+    v78_csv = root / "ardross_v78_equivalence" / "channel_comparison.csv"
+    runtime = root / "runtime_software_identities.json"
+
+    required = [verdict, replay, v78_summary, v78_csv, runtime]
+    missing = [str(p) for p in required if not p.exists()]
     if missing:
         raise HTTPException(
             status_code=503,
-            detail="Startup evidence is not ready: " + ", ".join(missing),
+            detail={"message": "Startup commissioning evidence incomplete", "missing": missing},
         )
 
-    files = sorted(p for p in root.rglob("*") if p.is_file())
-    if not files:
-        raise HTTPException(status_code=503, detail="No startup evidence files exist.")
+    # Validate the top-level verdict before publishing the pack.
+    import json
+    value = json.loads(verdict.read_text())
+    if value.get("passed") is not True:
+        raise HTTPException(status_code=503, detail="Startup commissioning verdict is not PASS")
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for path in files:
-            zf.write(path, arcname=str(path.relative_to(root)))
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
+    zip_base = Path("/tmp/hf_04_4_startup_evidence")
+    zip_path = Path(shutil.make_archive(str(zip_base), "zip", root_dir=root))
+    return FileResponse(
+        path=zip_path,
         media_type="application/zip",
-        headers={
-            "Content-Disposition": 'attachment; filename="hf_04_4_startup_evidence.zip"',
-            "Cache-Control": "no-store",
-        },
+        filename="hf_04_4_startup_evidence.zip",
     )
+
+@app.get("/startup-evidence-status")
+def startup_evidence_status():
+    root = STARTUP_EVIDENCE_DIR
+    return {
+        "root": str(root.resolve()),
+        "root_exists": root.exists(),
+        "files": sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()) if root.exists() else [],
+    }
