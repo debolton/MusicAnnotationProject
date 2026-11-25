@@ -3,7 +3,7 @@ import csv,hashlib,json,platform
 from importlib import metadata
 ROOT=Path(__file__).resolve().parent
 BUNDLE=ROOT/'frozen/a5_v1'
-POLICY_ID='A5-V1-P0980-M0960-A0995-RUN2'
+POLICY_ID='A5-v1-print-p0980-margin0960-run2'
 IGNORE_NAMES={'.DS_Store','Thumbs.db'}
 def generated(rel):
     p=Path(rel); return '__pycache__' in p.parts or p.suffix.lower() in {'.pyc','.pyo'} or p.name in IGNORE_NAMES
