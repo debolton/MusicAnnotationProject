@@ -21,12 +21,13 @@ def gate():
   if float(p.get(k,-1))!=v:raise RuntimeError(f'A5 constant mismatch: {k}')
  for r in csv.DictReader((BUNDLE/'artifact_manifest.csv').open()):
   rel=r.get('relative_path') or r.get('path') or r.get('file'); exp=r.get('sha256') or r.get('SHA-256'); q=BUNDLE/rel
-  if not q.exists():
-    raise RuntimeError(f'A5 artefact does not exist: {rel}')
-  if not sha(q)==exp:
-    raise RuntimeError(f'A5 artifact incorrect sha: {rel}')
+  if not q.exists() or not sha(q)==exp:
+    raise RuntimeError(f'A5 artefact incorrect: {rel}')
  f=json.loads((BUNDLE/'freeze_manifest.json').read_text()); replay=f.get('replay_passed',f.get('replay',{}).get('passed'))
- if f.get('policy_id')!=POLICY_ID or replay is not True:raise RuntimeError('A5 freeze or replay gate failed')
+ if f.get('policy_id')!=POLICY_ID:
+  raise RuntimeError('A5 freeze failed')
+ if replay is not True:
+  raise RuntimeError('Replay gate failed')
  return p
 POLICY=gate()
 if __name__=='__main__':print(json.dumps({'ok':True,'policy_id':POLICY_ID},indent=2))
