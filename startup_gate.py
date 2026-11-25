@@ -23,7 +23,7 @@ def gate():
   rel=r.get('relative_path') or r.get('path') or r.get('file'); exp=r.get('sha256') or r.get('SHA-256'); q=BUNDLE/rel
   if not q.exists() or not sha(q)==exp:
     raise RuntimeError(f'A5 artefact missing or incorrect: {rel}')
- f=json.loads((BUNDLE/'freeze_manifest.json').read_text()); replay=f.get('replay_passed')
+ f=json.loads((BUNDLE/'freeze_manifest.json')); replay=f.get('replay_passed')
  print(f'Policy ID: {f.get('policy_id')}')
  if f.get('policy_id')!=POLICY_ID:
   raise RuntimeError('A5 freeze failed')
