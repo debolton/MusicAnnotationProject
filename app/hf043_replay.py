@@ -27,6 +27,40 @@ def _read_vector(path: Path, kind='float'):
         except ValueError: continue
     return np.asarray(vals, dtype=np.float64 if kind=='float' else np.int64)
 
+def _read_string_vector(path: Path):
+
+    with path.open(
+        newline='',
+        encoding='utf-8-sig',
+    ) as f:
+        rows = list(csv.reader(f))
+
+    values = []
+
+    VALID = {
+        'PRINT',
+        'ANNOTATION',
+        'UNCERTAIN',
+    }
+
+    for row in rows:
+
+        if not row:
+            continue
+
+        value = row[-1].strip().upper()
+
+        # This automatically ignores the CSV header:
+        # expected_provisional / expected_final
+        if value in VALID:
+            values.append(value)
+
+    return np.asarray(
+        values,
+        dtype=object,
+    )
+
+
 def _read_image(name, flags=cv2.IMREAD_GRAYSCALE):
     p=ARDROSS/name
     a=cv2.imread(str(p),flags)
@@ -87,9 +121,9 @@ def load_replay():
         arrays[k]=(arrays[k]>0).astype(np.float32)
     x=_read_vector(ARDROSS/'x.csv','int').astype(np.int64)
     y=_read_vector(ARDROSS/'y.csv','int').astype(np.int64)
-    expected_p=_read_vector(ARDROSS/'expected_probability.csv').astype(np.int64)
-    expected_prov=_read_vector(ARDROSS/'expected_provisional.csv').astype(np.int64)
-    expected_final=_read_vector(ARDROSS/'expected_final.csv').astype(np.int64)
+    expected_p=_read_vector(ARDROSS/'expected_probability.csv').astype(np.float64)
+    expected_prov=_read_string_vector(ARDROSS/'expected_provisional.csv')
+    expected_final=_read_string_vector(ARDROSS/'expected_final.csv')
     
     n=len(x)
     print(f'Length x: {len(x)}')
