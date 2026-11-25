@@ -22,11 +22,12 @@ def gate():
  for r in csv.DictReader((BUNDLE/'artifact_manifest.csv').open()):
   rel=r.get('relative_path') or r.get('path') or r.get('file'); exp=r.get('sha256') or r.get('SHA-256'); q=BUNDLE/rel
   if not q.exists() or not sha(q)==exp:
-    raise RuntimeError(f'A5 artefact incorrect: {rel}')
+    raise RuntimeError(f'A5 artefact missing or incorrect: {rel}')
  f=json.loads((BUNDLE/'freeze_manifest.json').read_text()); replay=f.get('replay_passed')
  if f.get('policy_id')!=POLICY_ID:
   raise RuntimeError('A5 freeze failed')
- if replay is not true:
+ print(f.get('replay_passed'))
+ if f.get('replay_passed') is not True:
   raise RuntimeError('Replay gate failed')
  return p
 POLICY=gate()
