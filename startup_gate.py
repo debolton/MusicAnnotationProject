@@ -24,7 +24,7 @@ def gate():
         q=BUNDLE/rel
         if not q.exists() or sha(q)!=expected: raise RuntimeError(f'A5 artefact failure: {rel}')
     f=json.loads((BUNDLE/'freeze_manifest.json').read_text())
-    replay=f['replay_passed'] if 'replay_passed' in f else (f.get('replay') or {}).get('passed')
+    replay=f.get('payload', {}).get('replay_passed')
     if replay is not True: raise RuntimeError(f'A5 replay gate failed: {replay!r}')
     # Critical pickle compatibility gate. sklearn 1.6.1 was the recorded serializer for the estimator lineage.
     if metadata.version('scikit-learn')!='1.6.1': raise RuntimeError('scikit-learn must be 1.6.1')
