@@ -1,0 +1,18 @@
+{
+  "calibration_role": "complete Notebook 50 source-group OOF REMOVE scores",
+  "clean_truth_required_at_inference": false,
+  "connectivity": 8,
+  "estimator_role": "post-development all-permitted-data deployment refit",
+  "m3_fallback": true,
+  "minimum_remove_run": 2,
+  "policy_basis": "Notebook 50 REMOVE-only decision frozen by Notebook 52",
+  "policy_id": "233e87e4917425286cab89e9c98bff5733dc36deb2ce583011a466b108c0dc27",
+  "policy_name": "M5_REMOVE_FULL_DEVELOPMENT",
+  "remove_probability_threshold": 0.995,
+  "remove_region_minimum_mean_probability": 0.995,
+  "remove_region_minimum_pixel_fraction_above_threshold": 1.0,
+  "safe_protect_runtime_enabled": false,
+  "selected_model_family": "local_nonlinear",
+  "selected_target": "REMOVE",
+  "source_notebook52_policy_id": "79ce74320bcd73633899aa5e8873e8092d1adce1e368c34e395334ca05e2957d"
+}
