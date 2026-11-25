@@ -1,0 +1,26 @@
+{
+  "annotation_action": "KEEP_A1_BYTE",
+  "annotation_threshold": 0.995,
+  "clean_image_permitted_at_runtime": false,
+  "connectivity": 8,
+  "development_policy_selected_post_outcome": true,
+  "effective_print_threshold": 0.98,
+  "fallback": "A1",
+  "independent_validation_completed": false,
+  "minimum_print_run": 2,
+  "outside_authoritative_mask": "IMMUTABLE_OBSERVED",
+  "policy_id": "A5-v1-print-p0980-margin0960-run2",
+  "print_action": "COPY_EXACT_OBSERVED_BYTE",
+  "print_margin": 0.96,
+  "print_threshold": 0.98,
+  "production_authorised": false,
+  "raw_page_coordinates_as_model_inputs": false,
+  "runtime_truth_permitted": false,
+  "status": "FROZEN_CANDIDATE_FOR_INDEPENDENT_TEST",
+  "truth_codes": {
+    "0": "ANNOTATION",
+    "1": "PRINT",
+    "2": "UNCERTAIN"
+  },
+  "uncertain_action": "KEEP_A1_BYTE"
+}

@@ -1,0 +1,25 @@
+{
+  "candidate_lock_id": "826035ea9745644a0b21b10ec1fc3d1b08670f65f2a5537e1116f4428f1a9f59",
+  "create_freeze_requested": true,
+  "identity_note": "Candidate identity uses semantic model, calibrator, policy, schema, source and replay content. Physical container hashes are retained for transport-integrity checking only.",
+  "payload": {
+    "calibration_evidence_semantic_sha256": "db78b75815b6f54ae04df03c5d716a131983fbebea4cc6298bd3ae00b97eeebe",
+    "calibrator_semantic_sha256": "39b39be7db0ff489ac93c0dbb8f14dfb1f6450c0f68fe8c5fc57fc620e7cd04b",
+    "channel_schema_semantic_sha256": "28205e75b02c67c12140d6cdab74a8b74293757f30be677f2d3b8020cf7ca89d",
+    "lock_schema": "A5_V1_CANDIDATE_SEMANTIC_LOCK_V2",
+    "model_config_semantic_sha256": "d30a1b09cb687e2762673609666f68308c0ae070e6824ce9d0f1a89024013a81",
+    "model_semantic_sha256": "26ac0425e3b577c12ab926ab854c6943c3c3d5a90b16d1bdfdd0e4d5a4ef0294",
+    "policy_id": "A5-v1-print-p0980-margin0960-run2",
+    "policy_semantic_sha256": "8984ebeeb6df71d7cc553e86e8f2cb7b2ee45b70ad3f4515e320d91c09ed975f",
+    "replay_passed": true,
+    "replay_semantic_sha256": "d1039fb7a45dd6d726ba1009fe8537c110fa7c4f687f361c8a6a07af80e389cf",
+    "runtime_sha256": "8f48f2150d5b0ecfd78efbeb4bf55e17f0dfe09aef4060214026519f2725b5d7",
+    "source_identity_semantic_sha256": "4b47eb99f7d79f32c1244e42377a28506021c6c7f0e4dfcca6c4b61530b8dd7e",
+    "source_predictions_sha256": "eef06cadd87ef41380f6e88a27806b2176cd2a99cfcc0fc7958036acb1e5c8d4",
+    "source_v82_run": "/content/drive/MyDrive/MusicAnnotationProject/observed_print_classifier_v8_2/20261018_082545_v8_2_development_whole_page",
+    "training_roster_semantic_sha256": "357aa2f98acf4c7dd8906311134bc82d894711668f93f378b23b215005550836"
+  },
+  "physical_artifact_manifest": "/content/drive/MyDrive/MusicAnnotationProject/a5_v1_freeze/candidates/20261123_182706_a5_v1_freeze_candidate/audit/artifact_manifest.csv",
+  "physical_artifact_manifest_sha256": "3328e58a4ab2b810b62d23ec5d75f04235b683c8a3e8b8ca8cbd4e2b9874df6f",
+  "two_run_stable": true
+}

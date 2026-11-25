@@ -1,0 +1,25 @@
+{
+  "batch": 512,
+  "channels": [
+    "obs",
+    "norm",
+    "mask",
+    "depth",
+    "horizontal",
+    "vertical",
+    "compact",
+    "preserve",
+    "remove",
+    "ambiguous",
+    "edge"
+  ],
+  "class": "TopologyCNN",
+  "class_weight_rule": "n_total/n_class",
+  "epochs": 12,
+  "lr": 0.001,
+  "patch": 33,
+  "seed": 42,
+  "training_roster_sha256": "4e32befc3d8b3ecb64655a67fcf52f80ee403fe638861fa227a41d5ac9b01c4e",
+  "training_rows": 189109,
+  "weight_decay": 0.0001
+}

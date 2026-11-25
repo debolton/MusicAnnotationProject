@@ -2,7 +2,7 @@ from pathlib import Path
 import json,uuid,numpy as np
 ROOT=Path(__file__).resolve().parents[1]/'runtime_sessions';ROOT.mkdir(exist_ok=True)
 def create(gray,confidence,draft,name):
- sid=uuid.uuid4().hex;d=ROOT/sid;d.mkdir();np.savez_compressed(d/'state.npz',gray=gray,confidence=confidence.astype(np.float16),draft=draft,working=draft);(d/'audit.json').write_text(json.dumps({'session_id':sid,'source_name':name,'revision':0,'events':[]},indent=2));return sid
+ sid=uuid.uuid4().hex;d=ROOT/sid;d.mkdir();np.savez_compressed(d/'state.npz',gray=gray,confidence=confidence.astype(np.float16),draft=draft,working=draft);(d/'audit.json').write_text(json.dumps({'session_id':sid,'source_name':name,'revision':0,'operation_sequence':0,'events':[]},indent=2));return sid
 def folder(sid):
  d=ROOT/sid
  if not d.exists():raise FileNotFoundError('Session not found or expired')

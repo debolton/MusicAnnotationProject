@@ -7,9 +7,10 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 from . import store,yolo
+from .a5_adapter import A5Adapter
 from frozen.v8_9.v8_9_operator import load_v89_operator
-ROOT=Path(__file__).resolve().parents[1];MODEL=ROOT/'frozen/yolo_detector/best.pt';PP=ROOT/'frozen/p_print_provider_v8_2f';RB=ROOT/'frozen/notebook52f_remove_bundle';_model=None;_op=None
-app=FastAPI(title='HF-04.0 Music Annotation');app.mount('/static',StaticFiles(directory=ROOT/'app/static'),name='static')
+ROOT=Path(__file__).resolve().parents[1];MODEL=ROOT/'frozen/yolo_detector/best.pt';PP=ROOT/'frozen/p_print_provider_v8_2f';RB=ROOT/'frozen/notebook52f_remove_bundle';_model=None;_op=None;_a5=None
+app=FastAPI(title='HF-04.1 Music Annotation');app.mount('/static',StaticFiles(directory=ROOT/'app/static'),name='static')
 class Stroke(BaseModel):mode:str;brush:float;points:list[list[float]];view_width:int;view_height:int
 class Approval(BaseModel):status:str;note:str=''
 def get_model():
@@ -22,6 +23,10 @@ def get_op():
  global _op
  if _op is None:_op=load_v89_operator(PP,RB,device='cuda' if __import__('torch').cuda.is_available() else 'cpu')
  return _op
+def get_a5():
+ global _a5
+ if _a5 is None:_a5=A5Adapter('cuda' if __import__('torch').cuda.is_available() else 'cpu')
+ return _a5
 def png(a):
  ok,b=cv2.imencode('.png',a);return Response(content=b.tobytes(),media_type='image/png',headers={'Cache-Control':'no-store'})
 def overlay(gray,mask):
@@ -42,18 +47,23 @@ def stroke(sid:str,s:Stroke):
  if len(pts)==1:cv2.circle(m,pts[0],max(1,brush//2),255,-1)
  else:
   for a,b in zip(pts,pts[1:]):cv2.line(m,a,b,255,brush,cv2.LINE_AA)
- z['working'][m>0]=255 if s.mode=='add' else 0;store.save(sid,z);a=store.audit(sid);a['revision']+=1;rev=a['revision'];a['events'].append({'utc':datetime.now(timezone.utc).isoformat(),'revision':rev,'operation':s.mode,'points':len(pts)});store.put_audit(sid,a);cv2.imwrite(str(store.folder(sid)/f'mask_revision_{rev:03d}.png'),z['working']);return {'revision':rev,'overlay_url':f'/api/session/{sid}/overlay?rev={rev}'}
+ z['working'][m>0]=255 if s.mode=='add' else 0;store.save(sid,z);a=store.audit(sid);a['revision']+=1;a['operation_sequence']=int(a.get('operation_sequence',0))+1;rev=a['revision'];a['events'].append({'utc':datetime.now(timezone.utc).isoformat(),'revision':rev,'operation':s.mode,'points':len(pts)});store.put_audit(sid,a);cv2.imwrite(str(store.folder(sid)/f'mask_revision_{rev:03d}.png'),z['working']);return {'revision':rev,'overlay_url':f'/api/session/{sid}/overlay?rev={rev}'}
 @app.post('/api/session/{sid}/undo')
 def undo(sid:str):
- a=store.audit(sid);rev=max(0,int(a['revision'])-1);m=cv2.imread(str(store.folder(sid)/f'mask_revision_{rev:03d}.png'),0);z=store.load(sid);z['working']=m;store.save(sid,z);a['revision']=rev;store.put_audit(sid,a);return {'revision':rev,'overlay_url':f'/api/session/{sid}/overlay?rev={rev}'}
+ a=store.audit(sid);src=max(0,int(a['revision'])-1);m=cv2.imread(str(store.folder(sid)/f'mask_revision_{src:03d}.png'),0);z=store.load(sid);z['working']=m;store.save(sid,z);a['revision']=int(a['revision'])+1;a['operation_sequence']=int(a.get('operation_sequence',0))+1;rev=a['revision'];a['events'].append({'utc':datetime.now(timezone.utc).isoformat(),'revision':rev,'operation_sequence':a['operation_sequence'],'operation':'undo','restored_from_revision':src});store.put_audit(sid,a);cv2.imwrite(str(store.folder(sid)/f'mask_revision_{rev:03d}.png'),m);return {'revision':rev,'overlay_url':f'/api/session/{sid}/overlay?rev={rev}'}
 @app.post('/api/session/{sid}/authorise')
 def authorise(sid:str):
- z=store.load(sid);d=store.folder(sid);cv2.imwrite(str(d/'reviewed_authoritative_seed_mask.png'),z['working']);res=get_op().run_page(z['gray'],z['working'],page=sid);cv2.imwrite(str(d/'v8_9_corrected.png'),res.corrected);cv2.imwrite(str(d/'v8_8_parent.png'),res.parent_v88_corrected);cv2.imwrite(str(d/'v7_8_baseline.png'),res.baseline_v78);cv2.imwrite(str(d/'prepared_authoritative_mask.png'),res.authoritative_mask.astype(np.uint8)*255);cv2.imwrite(str(d/'ring2_mask.png'),res.ring2_mask.astype(np.uint8)*255);cv2.imwrite(str(d/'v8_9_delta.png'),res.v89_delta_mask.astype(np.uint8)*255);cv2.imwrite(str(d/'safe_remove_mask.png'),res.safe_remove_mask.astype(np.uint8)*255);cv2.imwrite(str(d/'m5_remove_mask.png'),res.m5_remove_mask.astype(np.uint8)*255);np.savez_compressed(d/'operator_diagnostics.npz',p_print=res.p_print,p_remove=res.p_remove,reason_map=res.reason_map,m3=res.m3_mask,ring2=res.ring2_mask,safe_remove=res.safe_remove_mask,m5_remove=res.m5_remove_mask);res.features.to_csv(d/'remove_features.csv',index=False);(d/'operator_audit.json').write_text(json.dumps(res.audit,indent=2,default=str));return {'ok':True,'corrected_url':f'/api/session/{sid}/result','original_url':f'/api/session/{sid}/image','diagnostics':{'ring2_pixels':int(res.ring2_mask.sum()),'v89_delta_pixels':int(res.v89_delta_mask.sum()),'safe_remove_pixels':int(res.safe_remove_mask.sum()),'outside_mask_drift':int(res.audit.get('outside_mask_drift',0))}}
+ z=store.load(sid);d=store.folder(sid);cv2.imwrite(str(d/'reviewed_authoritative_seed_mask.png'),z['working']);a5,a1,mask,dec,prob,ra=get_a5().run(z['gray'],z['working'],sid)
+ cv2.imwrite(str(d/'a5_v1_corrected.png'),a5);cv2.imwrite(str(d/'a1_fallback.png'),a1);cv2.imwrite(str(d/'prepared_authoritative_mask.png'),mask.astype(np.uint8)*255);cv2.imwrite(str(d/'a5_delta_from_a1.png'),(a5!=a1).astype(np.uint8)*255)
+ if prob is not None:np.save(d/'a5_p_print.npy',np.asarray(prob))
+ if dec is not None:np.save(d/'a5_decision.npy',np.asarray(dec))
+ audit={'policy_id':'A5-v1-print-p0980-margin0960-run2','a5_changed_from_a1_pixels':int((a5!=a1).sum()),'outside_authority_drift':int((a5[~mask]!=z['gray'][~mask]).sum()),'runtime_audit':ra};(d/'a5_operator_audit.json').write_text(json.dumps(audit,indent=2,default=str))
+ return {'ok':True,'corrected_url':f'/api/session/{sid}/result','original_url':f'/api/session/{sid}/image','diagnostics':{'ring2_pixels':0,'v89_delta_pixels':audit['a5_changed_from_a1_pixels'],'safe_remove_pixels':int((a1!=z['gray']).sum()),'outside_mask_drift':audit['outside_authority_drift']}}
 @app.get('/api/session/{sid}/result')
-def result(sid:str):return png(cv2.imread(str(store.folder(sid)/'v8_9_corrected.png'),0))
+def result(sid:str):return png(cv2.imread(str(store.folder(sid)/'a5_v1_corrected.png'),0))
 @app.get('/api/session/{sid}/diagnostic/{name}')
 def diag(sid:str,name:str):
- names={'mask':'prepared_authoritative_mask.png','ring2':'ring2_mask.png','delta':'v8_9_delta.png','safe_remove':'safe_remove_mask.png','m5':'m5_remove_mask.png','v78':'v7_8_baseline.png','v88':'v8_8_parent.png'}
+ names={'mask':'prepared_authoritative_mask.png','ring2':'a5_delta_from_a1.png','delta':'a5_delta_from_a1.png','safe_remove':'a1_fallback.png','m5':'a5_v1_corrected.png','v78':'a1_fallback.png','v88':'a1_fallback.png'}
  if name not in names:raise HTTPException(404,'Unknown diagnostic')
  return png(cv2.imread(str(store.folder(sid)/names[name]),0))
 @app.post('/api/session/{sid}/approval')
@@ -62,7 +72,7 @@ def approval(sid:str,x:Approval):
  d=store.folder(sid);(d/'whole_page_review.json').write_text(json.dumps({'utc':datetime.now(timezone.utc).isoformat(),'status':x.status,'note':x.note},indent=2));return {'ok':True,'status':x.status}
 @app.post('/api/session/{sid}/finish')
 def finish(sid:str):
- d=store.folder(sid);z=store.load(sid);cv2.imwrite(str(d/'reviewed_authoritative_seed_mask.png'),z['working']);out=d/'hf_04_0_training_and_audit.zip';manifest={'version':'HF-04.0','training_pair':['annotated_page.png','reviewed_authoritative_seed_mask.png'],'raw_yolo_is_training_truth':False,'correction_operator':'frozen V8.9','files':[]}
+ d=store.folder(sid);z=store.load(sid);cv2.imwrite(str(d/'reviewed_authoritative_seed_mask.png'),z['working']);out=d/'hf_04_1_training_and_audit.zip';manifest={'version':'HF-04.1','training_pair':['annotated_page.png','reviewed_authoritative_seed_mask.png'],'raw_yolo_is_training_truth':False,'correction_operator':'frozen A5-v1; bundle-provided A1','files':[]}
  for p in sorted(d.iterdir()):
   if p.is_file() and p!=out:manifest['files'].append({'name':p.name,'bytes':p.stat().st_size})
  (d/'package_manifest.json').write_text(json.dumps(manifest,indent=2))
@@ -71,6 +81,6 @@ def finish(sid:str):
    if p.is_file() and p!=out:q.write(p,p.name)
  return {'download_url':f'/api/session/{sid}/download'}
 @app.get('/api/session/{sid}/download')
-def download(sid:str):return FileResponse(store.folder(sid)/'hf_04_0_training_and_audit.zip',filename='hf_04_0_training_and_audit.zip')
+def download(sid:str):return FileResponse(store.folder(sid)/'hf_04_1_training_and_audit.zip',filename='hf_04_1_training_and_audit.zip')
 @app.get('/health')
-def health():return {'ok':True,'version':'4.0.0'}
+def health():return {'ok':True,'version':'4.1.0','policy_id':'A5-v1-print-p0980-margin0960-run2'}
