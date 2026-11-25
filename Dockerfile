@@ -8,3 +8,4 @@ COPY . .
 RUN python startup_gate.py
 EXPOSE 7860
 CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","7860"]
+GET /startup-evidence
