@@ -88,8 +88,8 @@ def load_replay():
     x=_read_vector(ARDROSS/'x.csv','int').astype(np.int64)
     y=_read_vector(ARDROSS/'y.csv','int').astype(np.int64)
     expected_p=_read_vector(ARDROSS/'expected_probability.csv')
-    expected_prov=_read_vector(ARDROSS/'expected_provisional.csv','int')
-    expected_final=_read_vector(ARDROSS/'expected_final.csv','int')
+    expected_prov=_read_vector(ARDROSS/'expected_provisional.csv')
+    expected_final=_read_vector(ARDROSS/'expected_final.csv')
     
     n=len(x)
     print(f'Length x: {len(x)}')
