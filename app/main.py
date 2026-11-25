@@ -7,10 +7,10 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 from . import store,yolo
-from .a5_adapter import A5Adapter
+from .a5_operator import A5Operator
 from frozen.v8_9.v8_9_operator import load_v89_operator
 ROOT=Path(__file__).resolve().parents[1];MODEL=ROOT/'frozen/yolo_detector/best.pt';PP=ROOT/'frozen/p_print_provider_v8_2f';RB=ROOT/'frozen/notebook52f_remove_bundle';_model=None;_op=None;_a5=None
-app=FastAPI(title='HF-04.1 Music Annotation');app.mount('/static',StaticFiles(directory=ROOT/'app/static'),name='static')
+app=FastAPI(title='HF-04.2 Music Annotation');app.mount('/static',StaticFiles(directory=ROOT/'app/static'),name='static')
 class Stroke(BaseModel):mode:str;brush:float;points:list[list[float]];view_width:int;view_height:int
 class Approval(BaseModel):status:str;note:str=''
 def get_model():
@@ -25,7 +25,7 @@ def get_op():
  return _op
 def get_a5():
  global _a5
- if _a5 is None:_a5=A5Adapter('cuda' if __import__('torch').cuda.is_available() else 'cpu')
+ if _a5 is None:_a5=A5Operator('cuda' if __import__('torch').cuda.is_available() else 'cpu')
  return _a5
 def png(a):
  ok,b=cv2.imencode('.png',a);return Response(content=b.tobytes(),media_type='image/png',headers={'Cache-Control':'no-store'})
@@ -50,20 +50,19 @@ def stroke(sid:str,s:Stroke):
  z['working'][m>0]=255 if s.mode=='add' else 0;store.save(sid,z);a=store.audit(sid);a['revision']+=1;a['operation_sequence']=int(a.get('operation_sequence',0))+1;rev=a['revision'];a['events'].append({'utc':datetime.now(timezone.utc).isoformat(),'revision':rev,'operation':s.mode,'points':len(pts)});store.put_audit(sid,a);cv2.imwrite(str(store.folder(sid)/f'mask_revision_{rev:03d}.png'),z['working']);return {'revision':rev,'overlay_url':f'/api/session/{sid}/overlay?rev={rev}'}
 @app.post('/api/session/{sid}/undo')
 def undo(sid:str):
- a=store.audit(sid);src=max(0,int(a['revision'])-1);m=cv2.imread(str(store.folder(sid)/f'mask_revision_{src:03d}.png'),0);z=store.load(sid);z['working']=m;store.save(sid,z);a['revision']=int(a['revision'])+1;a['operation_sequence']=int(a.get('operation_sequence',0))+1;rev=a['revision'];a['events'].append({'utc':datetime.now(timezone.utc).isoformat(),'revision':rev,'operation_sequence':a['operation_sequence'],'operation':'undo','restored_from_revision':src});store.put_audit(sid,a);cv2.imwrite(str(store.folder(sid)/f'mask_revision_{rev:03d}.png'),m);return {'revision':rev,'overlay_url':f'/api/session/{sid}/overlay?rev={rev}'}
+ a=store.audit(sid);rev=max(0,int(a['revision'])-1);m=cv2.imread(str(store.folder(sid)/f'mask_revision_{rev:03d}.png'),0);z=store.load(sid);z['working']=m;store.save(sid,z);a['revision']=rev;store.put_audit(sid,a);return {'revision':rev,'overlay_url':f'/api/session/{sid}/overlay?rev={rev}'}
 @app.post('/api/session/{sid}/authorise')
 def authorise(sid:str):
- z=store.load(sid);d=store.folder(sid);cv2.imwrite(str(d/'reviewed_authoritative_seed_mask.png'),z['working']);a5,a1,mask,dec,prob,ra=get_a5().run(z['gray'],z['working'],sid)
- cv2.imwrite(str(d/'a5_v1_corrected.png'),a5);cv2.imwrite(str(d/'a1_fallback.png'),a1);cv2.imwrite(str(d/'prepared_authoritative_mask.png'),mask.astype(np.uint8)*255);cv2.imwrite(str(d/'a5_delta_from_a1.png'),(a5!=a1).astype(np.uint8)*255)
- if prob is not None:np.save(d/'a5_p_print.npy',np.asarray(prob))
- if dec is not None:np.save(d/'a5_decision.npy',np.asarray(dec))
- audit={'policy_id':'A5-v1-print-p0980-margin0960-run2','a5_changed_from_a1_pixels':int((a5!=a1).sum()),'outside_authority_drift':int((a5[~mask]!=z['gray'][~mask]).sum()),'runtime_audit':ra};(d/'a5_operator_audit.json').write_text(json.dumps(audit,indent=2,default=str))
- return {'ok':True,'corrected_url':f'/api/session/{sid}/result','original_url':f'/api/session/{sid}/image','diagnostics':{'ring2_pixels':0,'v89_delta_pixels':audit['a5_changed_from_a1_pixels'],'safe_remove_pixels':int((a1!=z['gray']).sum()),'outside_mask_drift':audit['outside_authority_drift']}}
+ z=store.load(sid); d=store.folder(sid); cv2.imwrite(str(d/'reviewed_authoritative_seed_mask.png'),z['working']); r=get_a5().run(z['gray'],z['working'],page=sid)
+ cv2.imwrite(str(d/'prepared_dilation2_mask.png'),r['mask']); cv2.imwrite(str(d/'telea.png'),r['telea']); cv2.imwrite(str(d/'a1_geometry_t80.png'),r['a1']); cv2.imwrite(str(d/'a5_v1_corrected.png'),r['a5']); cv2.imwrite(str(d/'a5_print_mask.png'),r['print_mask'].astype(np.uint8)*255); cv2.imwrite(str(d/'a5_delta_from_a1.png'),(r['a5']!=r['a1']).astype(np.uint8)*255)
+ np.save(d/'a5_probability.npy',r['p_print']); np.save(d/'a5_provisional_decision.npy',r['provisional']); np.save(d/'a5_final_decision.npy',r['final'])
+ audit={'version':'HF-04.2','A1':'canonical V7.8 geometry_t80','A5_policy':'A5-v1-print-p0980-margin0960-run2','eligible_pixels':int(r['eligible'].sum()),'provisional_PRINT':int(np.sum(r['provisional']=='PRINT')),'final_PRINT':int(np.sum(r['final']=='PRINT')),'run2_demotions':int(np.sum((r['provisional']=='PRINT')&(r['final']!='PRINT'))),'A5_changed_from_A1':int(np.sum(r['a5']!=r['a1'])),'non_PRINT_A1_regression':int(np.sum(r['a5'][~r['print_mask']]!=r['a1'][~r['print_mask']])),'outside_mask_drift':int(np.sum(r['a5'][~(r['mask']>0)]!=z['gray'][~(r['mask']>0)])),'changed_byte_not_equal_observed':int(np.sum((r['a5']!=r['a1'])&(r['a5']!=z['gray'])))}; (d/'a5_operator_audit.json').write_text(json.dumps(audit,indent=2))
+ return {'ok':True,'corrected_url':f'/api/session/{sid}/result','original_url':f'/api/session/{sid}/image','diagnostics':{'ring2_pixels':audit['eligible_pixels'],'v89_delta_pixels':audit['A5_changed_from_A1'],'safe_remove_pixels':int(np.sum(r['routes']['remove'])),'outside_mask_drift':audit['outside_mask_drift']}}
 @app.get('/api/session/{sid}/result')
 def result(sid:str):return png(cv2.imread(str(store.folder(sid)/'a5_v1_corrected.png'),0))
 @app.get('/api/session/{sid}/diagnostic/{name}')
 def diag(sid:str,name:str):
- names={'mask':'prepared_authoritative_mask.png','ring2':'a5_delta_from_a1.png','delta':'a5_delta_from_a1.png','safe_remove':'a1_fallback.png','m5':'a5_v1_corrected.png','v78':'a1_fallback.png','v88':'a1_fallback.png'}
+ names={'mask':'prepared_dilation2_mask.png','ring2':'a5_print_mask.png','delta':'a5_delta_from_a1.png','safe_remove':'a1_geometry_t80.png','m5':'a5_v1_corrected.png','v78':'a1_geometry_t80.png','v88':'a1_geometry_t80.png'}
  if name not in names:raise HTTPException(404,'Unknown diagnostic')
  return png(cv2.imread(str(store.folder(sid)/names[name]),0))
 @app.post('/api/session/{sid}/approval')
@@ -72,7 +71,7 @@ def approval(sid:str,x:Approval):
  d=store.folder(sid);(d/'whole_page_review.json').write_text(json.dumps({'utc':datetime.now(timezone.utc).isoformat(),'status':x.status,'note':x.note},indent=2));return {'ok':True,'status':x.status}
 @app.post('/api/session/{sid}/finish')
 def finish(sid:str):
- d=store.folder(sid);z=store.load(sid);cv2.imwrite(str(d/'reviewed_authoritative_seed_mask.png'),z['working']);out=d/'hf_04_1_training_and_audit.zip';manifest={'version':'HF-04.1','training_pair':['annotated_page.png','reviewed_authoritative_seed_mask.png'],'raw_yolo_is_training_truth':False,'correction_operator':'frozen A5-v1; bundle-provided A1','files':[]}
+ d=store.folder(sid);z=store.load(sid);cv2.imwrite(str(d/'reviewed_authoritative_seed_mask.png'),z['working']);out=d/'hf_04_2_training_and_audit.zip';manifest={'version':'HF-04.2','training_pair':['annotated_page.png','reviewed_authoritative_seed_mask.png'],'raw_yolo_is_training_truth':False,'correction_operator':'canonical V7.8/A1 plus frozen A5-v1','files':[]}
  for p in sorted(d.iterdir()):
   if p.is_file() and p!=out:manifest['files'].append({'name':p.name,'bytes':p.stat().st_size})
  (d/'package_manifest.json').write_text(json.dumps(manifest,indent=2))
@@ -81,6 +80,6 @@ def finish(sid:str):
    if p.is_file() and p!=out:q.write(p,p.name)
  return {'download_url':f'/api/session/{sid}/download'}
 @app.get('/api/session/{sid}/download')
-def download(sid:str):return FileResponse(store.folder(sid)/'hf_04_1_training_and_audit.zip',filename='hf_04_1_training_and_audit.zip')
+def download(sid:str):return FileResponse(store.folder(sid)/'hf_04_2_training_and_audit.zip',filename='hf_04_2_training_and_audit.zip')
 @app.get('/health')
-def health():return {'ok':True,'version':'4.1.0','policy_id':'A5-v1-print-p0980-margin0960-run2'}
+def health():return {'ok':True,'version':'4.2.0','policy_id':'A5-v1-print-p0980-margin0960-run2'}
