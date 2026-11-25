@@ -87,9 +87,9 @@ def load_replay():
         arrays[k]=(arrays[k]>0).astype(np.float32)
     x=_read_vector(ARDROSS/'x.csv','int').astype(np.int64)
     y=_read_vector(ARDROSS/'y.csv','int').astype(np.int64)
-    expected_p=_read_vector(ARDROSS/'expected_probability.csv')
-    expected_prov=_read_vector(ARDROSS/'expected_provisional.csv')
-    expected_final=_read_vector(ARDROSS/'expected_final.csv')
+    expected_p=_read_vector(ARDROSS/'expected_probability.csv').astype(np.int64)
+    expected_prov=_read_vector(ARDROSS/'expected_provisional.csv').astype(np.int64)
+    expected_final=_read_vector(ARDROSS/'expected_final.csv').astype(np.int64)
     
     n=len(x)
     print(f'Length x: {len(x)}')
