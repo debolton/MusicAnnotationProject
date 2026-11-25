@@ -24,10 +24,11 @@ def gate():
   if not q.exists() or not sha(q)==exp:
     raise RuntimeError(f'A5 artefact missing or incorrect: {rel}')
  f=json.loads((BUNDLE/'freeze_manifest.json').read_text()); replay=f.get('replay_passed')
+ print(f'Policy ID: {f.get('policy_id')}')
  if f.get('policy_id')!=POLICY_ID:
   raise RuntimeError('A5 freeze failed')
- print(f.get('replay_passed'))
- if f.get('replay_passed') is not True:
+ print(f'Replay passed status: {f.get('replay_passed')}')
+ if replay is not True:
   raise RuntimeError('Replay gate failed')
  return p
 POLICY=gate()
