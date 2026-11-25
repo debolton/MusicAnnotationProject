@@ -14,7 +14,7 @@ from fastapi import File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from app.hf045_batch import BatchFailure, run_batch
 from app.a5_operator import A5Operator
-from app.canonical_v78 import build_v78_from_reviewed_mask
+from app.canonical_v78 import build_v78
 
 BATCH_OUTPUT_ROOT = Path(__file__).resolve().parent.parent / "batch_runs"
 BATCH_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -148,7 +148,7 @@ async def batch_a1_a5(file: UploadFile = File(...)):
         zip_path = run_batch(
             upload=payload,
             operator=_a5,
-            canonical_v78=build_v78_from_reviewed_mask,
+            canonical_v78=build_v78,
             output_root=BATCH_OUTPUT_ROOT,
         )
         return FileResponse(zip_path, media_type="application/zip", filename=zip_path.name)
