@@ -1,7 +1,7 @@
 from pathlib import Path
+import csv,hashlib,json,platform
 from importlib import metadata
-import csv, hashlib, json, platform
-ROOT=Path(__file__).resolve().parent; BUNDLE=ROOT/'frozen/a5_v1'; POLICY_ID='A5-v1-print-p0980-margin0960-run2'
+ROOT=Path(__file__).resolve().parent; BUNDLE=ROOT/'frozen/a5_v1'; POLICY_ID='A5-V1-P0980-M0960-A0995-RUN2'
 IGNORE_NAMES={'.DS_Store','Thumbs.db'}
 def generated(rel):
     p=Path(rel); return '__pycache__' in p.parts or p.suffix.lower() in {'.pyc','.pyo'} or p.name in IGNORE_NAMES
@@ -23,12 +23,10 @@ def gate():
         if not rel or generated(rel): continue
         q=BUNDLE/rel
         if not q.exists() or sha(q)!=expected: raise RuntimeError(f'A5 artefact failure: {rel}')
-    f=json.loads((BUNDLE/'freeze_manifest.json').read_text())
-    replay=f.get('payload', {}).get('replay_passed')
-    if replay is not True: raise RuntimeError(f'A5 replay gate failed: {replay!r}')
-    # Critical pickle compatibility gate. sklearn 1.6.1 was the recorded serializer for the estimator lineage.
     if metadata.version('scikit-learn')!='1.6.1': raise RuntimeError('scikit-learn must be 1.6.1')
     if metadata.version('joblib')!='1.6.0': raise RuntimeError('joblib must be 1.6.0')
-    return policy
-POLICY=gate()
-if __name__=='__main__': print(json.dumps({'ready':True,'policy_id':POLICY_ID,'python':platform.python_version()},indent=2))
+    from app.a5_operator import A5Operator
+    op=A5Operator()
+    return policy,op.startup_replay
+POLICY,ARDROSS_REPLAY=gate()
+if __name__=='__main__': print(json.dumps({'ready':True,'policy_id':POLICY_ID,'python':platform.python_version(),'ardross_replay':ARDROSS_REPLAY},indent=2))

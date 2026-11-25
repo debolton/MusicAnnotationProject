@@ -1,97 +1,206 @@
-[
-  {
-    "path": "Dockerfile",
-    "bytes": 338,
-    "sha256": "3b1777156d8c969d4712619745f1010ed464fa1cda611a3a12627083b31f9f46"
-  },
-  {
-    "path": "README.md",
-    "bytes": 231,
-    "sha256": "c16560614a87e7677e53096323043f0afa481522001601e021db5ba0ef570530"
-  },
-  {
-    "path": "app/__init__.py",
-    "bytes": 20,
-    "sha256": "df7bb78a01712ffa437e98c7f079921a466c000749991cba085f7429adad0ac6"
-  },
-  {
-    "path": "app/main.py",
-    "bytes": 7068,
-    "sha256": "0a40d0f923e4f08ab332f276448c29d8ead79291165af16c494fdca878bfb7d3"
-  },
-  {
-    "path": "app/static/app.js",
-    "bytes": 4082,
-    "sha256": "b32a6850e5262c68b3b31552468cac0750f80926537c3008f841941d0d41d672"
-  },
-  {
-    "path": "app/static/style.css",
-    "bytes": 1000,
-    "sha256": "d992c25cefa4b4b465a3e87ba2d7d2616ebdd158998685195ca1c1672e23e8af"
-  },
-  {
-    "path": "app/store.py",
-    "bytes": 917,
-    "sha256": "8b2717c58c0f4fcf8fa0540362571eb1538e1a0e81f8763edee962cc82606998"
-  },
-  {
-    "path": "app/templates/index.html",
-    "bytes": 1777,
-    "sha256": "800e914c8424aa639d3bf3d0672682e754ffc1189df3a784fd30d0026f01feb2"
-  },
-  {
-    "path": "app/yolo.py",
-    "bytes": 839,
-    "sha256": "df450c5a85ff7d43a9848f150a5e3cab5f9a45fce8e94a10b3671eda3c27169e"
-  },
-  {
-    "path": "docs/DEPLOY.md",
-    "bytes": 505,
-    "sha256": "2f5ba881fef4633e62fd3e60313ceb6e5a8594fa9b53b983101278cbfa4b3f9e"
-  },
-  {
-    "path": "docs/TEST.md",
-    "bytes": 375,
-    "sha256": "148d7fa5efa13ff3f58b418f7fa3ccaa93bce072016c1146643565bbdf1e3c04"
-  },
-  {
-    "path": "frozen/__init__.py",
-    "bytes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-  },
-  {
-    "path": "frozen/notebook52f_remove_bundle/PUT_COMPLETE_REMOVE_BUNDLE_HERE.txt",
-    "bytes": 58,
-    "sha256": "0a1461a1951845f82d0915e62de3660f241e89ca936dace4c83ebf2f05ac3334"
-  },
-  {
-    "path": "frozen/p_print_provider_v8_2f/PUT_COMPLETE_P_PRINT_BUNDLE_HERE.txt",
-    "bytes": 61,
-    "sha256": "a7e242ce31c40b2c4197d4664421d2bb50360ae5ac6aa658b407d8d566407f2e"
-  },
-  {
-    "path": "frozen/v8_9/__init__.py",
-    "bytes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-  },
-  {
-    "path": "frozen/v8_9/v8_9_operator.py",
-    "bytes": 15346,
-    "sha256": "506f977d80ede4beeac6c59dbd7f73b3ea71c60e79b5a20b0223b5daee17e32a"
-  },
-  {
-    "path": "frozen/yolo_detector/PUT_best.pt_HERE.txt",
-    "bytes": 28,
-    "sha256": "58a63a3616761048bdf4221ce4e074b6473c09e0bda7c5b7a2200e90d618d76e"
-  },
-  {
-    "path": "requirements.txt",
-    "bytes": 149,
-    "sha256": "4908862a140517fbe1dd84af0e922520f2abfb5982955ed7094b5c059e845bb3"
-  },
-  {
-    "path": "runtime_sessions/.gitkeep",
-    "bytes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-  }
-]
+{
+  "package": "HF-04.3",
+  "base": "HF-04.2",
+  "files": [
+    {
+      "path": "Dockerfile",
+      "bytes": 393,
+      "sha256": "59417529f617852abae8712eb0d892446225bb5ac4599fb44a923aba5be04b1b"
+    },
+    {
+      "path": "HF042_PACKAGE_MANIFEST.json",
+      "bytes": 646,
+      "sha256": "49d7534e959f8f49eedd396ff60d72b6713ff011d7828d94254919ccf7cb3f33"
+    },
+    {
+      "path": "README.md",
+      "bytes": 769,
+      "sha256": "dbe2bf20331587065c204fa609ebe394f748c7d660d01d5cf1aed416ddb0bfa3"
+    },
+    {
+      "path": "app/__init__.py",
+      "bytes": 20,
+      "sha256": "df7bb78a01712ffa437e98c7f079921a466c000749991cba085f7429adad0ac6"
+    },
+    {
+      "path": "app/a5_operator.py",
+      "bytes": 1770,
+      "sha256": "8fbbfc9f1b5a5fb342cda78083a0f4b7c25416da8335ff33371a26e6744b6d4b"
+    },
+    {
+      "path": "app/canonical_v78.py",
+      "bytes": 4393,
+      "sha256": "043f9bf338f533627b5c643279bd23c59c481714449178c7135c642d94ff7db2"
+    },
+    {
+      "path": "app/hf043_channel_diagnostic.py",
+      "bytes": 3144,
+      "sha256": "c739e86bb7446cc4da87603463de0299f936edc1456ed1e5d203a62e0637de9f"
+    },
+    {
+      "path": "app/hf043_replay.py",
+      "bytes": 4652,
+      "sha256": "847ac6e1c50126604828c815d92deeaa587cd5245e8c6087bcc38fca804afa37"
+    },
+    {
+      "path": "app/main.py",
+      "bytes": 7674,
+      "sha256": "33b5fbb003c99aec2163d9acc1d26b13af40745871cbb517a2641a99a64b564c"
+    },
+    {
+      "path": "app/static/app.js",
+      "bytes": 4082,
+      "sha256": "b32a6850e5262c68b3b31552468cac0750f80926537c3008f841941d0d41d672"
+    },
+    {
+      "path": "app/static/style.css",
+      "bytes": 1000,
+      "sha256": "d992c25cefa4b4b465a3e87ba2d7d2616ebdd158998685195ca1c1672e23e8af"
+    },
+    {
+      "path": "app/store.py",
+      "bytes": 940,
+      "sha256": "61c87d7483872b1e37c61740bc4f26f3848284a60bdc417275338248bf1b8230"
+    },
+    {
+      "path": "app/templates/index.html",
+      "bytes": 1777,
+      "sha256": "800e914c8424aa639d3bf3d0672682e754ffc1189df3a784fd30d0026f01feb2"
+    },
+    {
+      "path": "app/yolo.py",
+      "bytes": 839,
+      "sha256": "df450c5a85ff7d43a9848f150a5e3cab5f9a45fce8e94a10b3671eda3c27169e"
+    },
+    {
+      "path": "docs/DEPLOY.md",
+      "bytes": 505,
+      "sha256": "2f5ba881fef4633e62fd3e60313ceb6e5a8594fa9b53b983101278cbfa4b3f9e"
+    },
+    {
+      "path": "docs/HF043.md",
+      "bytes": 1131,
+      "sha256": "8cae1f5e607734b2d0c40e8bc7856ae3380158f7fa4340a697a0545152fb4832"
+    },
+    {
+      "path": "docs/TEST.md",
+      "bytes": 375,
+      "sha256": "148d7fa5efa13ff3f58b418f7fa3ccaa93bce072016c1146643565bbdf1e3c04"
+    },
+    {
+      "path": "frozen/__init__.py",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "frozen/a5_v1/PUT_COMPLETE_NOTEBOOK91_BUNDLE_HERE.txt",
+      "bytes": 171,
+      "sha256": "46e8132e1bd02cb7ef3f352607cb0e304d2359cf6061c114c59b2bafa80b1c10"
+    },
+    {
+      "path": "frozen/a5_v1/SUPPLIED_POLICY_REFERENCE_ONLY.json",
+      "bytes": 2922,
+      "sha256": "a2c2f8bb28a3efa933dfc77f10a75f5672e53220cfa70a54a738ade3e4ecf2ba"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/README.txt",
+      "bytes": 435,
+      "sha256": "7bd7776b0bd6ede0b4c51916e65a1d7b3b26d23e4b6a65436573b991ccbb3d11"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/ambiguous.png",
+      "bytes": 82033,
+      "sha256": "0322d1e17f73cf26d3cc0ad946a5b50563f175ab364dc96d26e47c014337c1fc"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/compact.png",
+      "bytes": 127509,
+      "sha256": "8a98e78a7c9665d4c14bd75bc530e748a635d7d744f830c07231cd600ee8a425"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/edge.png",
+      "bytes": 534928,
+      "sha256": "50cac2b2170d69df8c79872e1b8cd918fd8cf80ed0c1bf1fbfc54845b4a92d3a"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/horizontal.png",
+      "bytes": 86676,
+      "sha256": "d6cc04bf69ed04d49f6813d1afc63be027b9ff30ec809f9c8d7368ece80c24f3"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/mask.png",
+      "bytes": 137514,
+      "sha256": "809d4faa8d668d20dd30ec9fa6d0f3651ce7696f2bb895ea7bdee3532eb74b38"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/norm.png",
+      "bytes": 1158796,
+      "sha256": "38c6d525a5a72cfaa5de879dc8ee3255f90ace09a93ce92d288ab5a09c14505b"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/obs.png",
+      "bytes": 1226097,
+      "sha256": "9949c95d2cd49bb043860fe1d7d0bb1e56c64a0494f759aff812b46d7948c4a2"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/preserve.png",
+      "bytes": 79950,
+      "sha256": "e6d4ae0e009649616b2b4c33c544ee3d5cc827050a28029498c0de94327b9434"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/remove.png",
+      "bytes": 148993,
+      "sha256": "68a6535e5b12c963268dd80c6071ca2ad3425ecf6708f3bf843e4409f09fb6de"
+    },
+    {
+      "path": "frozen/a5_v1/replay/ardross/vertical.png",
+      "bytes": 113502,
+      "sha256": "60e8a45941f80c827219eafb64810ca7e06e39387ff9fb6bd1ea169bde3a86b2"
+    },
+    {
+      "path": "frozen/notebook52f_remove_bundle/PUT_COMPLETE_REMOVE_BUNDLE_HERE.txt",
+      "bytes": 58,
+      "sha256": "0a1461a1951845f82d0915e62de3660f241e89ca936dace4c83ebf2f05ac3334"
+    },
+    {
+      "path": "frozen/p_print_provider_v8_2f/PUT_COMPLETE_P_PRINT_BUNDLE_HERE.txt",
+      "bytes": 61,
+      "sha256": "a7e242ce31c40b2c4197d4664421d2bb50360ae5ac6aa658b407d8d566407f2e"
+    },
+    {
+      "path": "frozen/v8_9/__init__.py",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "frozen/v8_9/v8_9_operator.py",
+      "bytes": 15346,
+      "sha256": "506f977d80ede4beeac6c59dbd7f73b3ea71c60e79b5a20b0223b5daee17e32a"
+    },
+    {
+      "path": "frozen/yolo_detector/PUT_best.pt_HERE.txt",
+      "bytes": 28,
+      "sha256": "58a63a3616761048bdf4221ce4e074b6473c09e0bda7c5b7a2200e90d618d76e"
+    },
+    {
+      "path": "requirements.txt",
+      "bytes": 212,
+      "sha256": "a7d463cc8036f56e7679cb53a2ea0c02cdeb33749a06f4dc95a351733d8f9af7"
+    },
+    {
+      "path": "runtime_sessions/.gitkeep",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "startup_gate.py",
+      "bytes": 2028,
+      "sha256": "5266b38283b215d80edbd53685691254558214316cdc787eee3fd09b569558be"
+    },
+    {
+      "path": "tests/test_hf043_replay_contract.py",
+      "bytes": 313,
+      "sha256": "dc003ea1333892dd8d9e8ff2a602afc73d6a92a25ef5c206b2ccc9e48b518e60"
+    }
+  ]
+}

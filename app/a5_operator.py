@@ -8,6 +8,8 @@ class A5Operator:
         required=['load_bundle','make_padded','score_coordinates','decisions','assemble']; missing=[n for n in required if not callable(getattr(self.rt,n,None))]
         if missing: raise RuntimeError(f'A5 frozen runtime API incomplete: {missing}')
         self.model,self.calibrator,self.policy,self.schema,self.device=self.rt.load_bundle(BUNDLE,device=device)
+        from .hf043_replay import run_ardross_replay
+        self.startup_replay=run_ardross_replay(self)
     def run(self,observed,reviewed_seed,page=None,batch=512):
         v=build_v78(observed,reviewed_seed); padded=self.rt.make_padded(v['channels'],self.schema)
         prob=self.rt.score_coordinates(self.model,self.calibrator,padded,self.schema,v['ys'],v['xs'],self.device,batch=batch)
