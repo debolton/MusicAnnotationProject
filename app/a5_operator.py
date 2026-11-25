@@ -19,3 +19,30 @@ class A5Operator:
         if np.any(a5[~print_mask]!=v['a1'][~print_mask]): raise RuntimeError('A5 non-PRINT A1 regression')
         if np.any((a5!=v['a1'])&(a5!=observed)): raise RuntimeError('A5 changed byte not observed')
         return {**v,'a5':a5,'p_print':prob,'provisional':provisional,'final':final,'print_mask':print_mask}
+    def process_arrays(self, arrays, a1):
+        rt = self.rt
+        y, x = np.where(
+            (np.asarray(arrays['mask']) > 0)
+            & (np.asarray(arrays['obs']) < 200)
+            & ~(np.asarray(arrays['preserve']) > 0)
+        )
+        y = y.astype(np.int64); x = x.astype(np.int64)
+        padded = rt.make_padded(arrays, self.schema)
+        probability = rt.score_coordinates(
+            self.model, self.calibrator, padded, self.schema,
+            y, x, self.device, batch=512,
+        )
+        provisional, final = rt.decisions(probability, self.policy, a1.shape, y, x)
+        corrected = rt.assemble(a1, arrays['obs'], final, y, x)
+        print_mask = np.zeros(a1.shape, bool)
+        is_print = np.asarray(final).astype(str) == 'PRINT'
+        print_mask[y[is_print], x[is_print]] = True
+        return {
+            'probability': np.asarray(probability),
+            'provisional': np.asarray(provisional),
+            'final': np.asarray(final),
+            'y': y, 'x': x,
+            'print_mask': print_mask,
+            'corrected': corrected,
+        }
+

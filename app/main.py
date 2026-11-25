@@ -9,6 +9,16 @@ from pydantic import BaseModel
 from . import store,yolo
 from .a5_operator import A5Operator
 from frozen.v8_9.v8_9_operator import load_v89_operator
+from pathlib import Path
+from fastapi import File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from app.hf045_batch import BatchFailure, run_batch
+from app.a5_operator import A5Operator
+from app.canonical_v78 import build_v78_from_reviewed_mask
+
+BATCH_OUTPUT_ROOT = Path(__file__).resolve().parent.parent / "batch_runs"
+BATCH_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+
 ROOT=Path(__file__).resolve().parents[1];MODEL=ROOT/'frozen/yolo_detector/best.pt';PP=ROOT/'frozen/p_print_provider_v8_2f';RB=ROOT/'frozen/notebook52f_remove_bundle';_model=None;_op=None;_a5=None
 app=FastAPI(title='HF-04.2 Music Annotation');app.mount('/static',StaticFiles(directory=ROOT/'app/static'),name='static')
 class Stroke(BaseModel):mode:str;brush:float;points:list[list[float]];view_width:int;view_height:int
@@ -125,3 +135,24 @@ def startup_evidence_status():
         "root_exists": root.exists(),
         "files": sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()) if root.exists() else [],
     }
+
+
+@app.post("/batch-a1-a5")
+async def batch_a1_a5(file: UploadFile = File(...)):
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Upload one .zip file")
+    try:
+        payload = await file.read()
+        if not payload:
+            raise BatchFailure("Uploaded ZIP is empty")
+        zip_path = run_batch(
+            upload=payload,
+            operator=_a5,
+            canonical_v78=build_v78_from_reviewed_mask,
+            output_root=BATCH_OUTPUT_ROOT,
+        )
+        return FileResponse(zip_path, media_type="application/zip", filename=zip_path.name)
+    except BatchFailure as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"HF-04.5 batch failed: {e}")

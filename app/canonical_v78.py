@@ -57,10 +57,147 @@ def geometry_t80(observed,mask,telea):
     result=observed.copy(); result[remove]=paper[remove]; result[ambiguous]=telea[ambiguous]; result[preserve]=observed[preserve]
     return immutable(observed,result,mask),{'preserve':preserve,'remove':remove,'ambiguous':ambiguous,'horizontal':horizontal,'vertical':vertical,'compact':compact,'paper':paper,'normalised':normalised}
 
-def build_v78(observed,reviewed_seed):
-    observed=np.asarray(observed,dtype=np.uint8); seed=binary(reviewed_seed)
-    if observed.shape!=seed.shape: raise RuntimeError('Observed/seed shape mismatch')
-    mask=prepare_mask(seed,2); telea=telea_reconstruct(observed,mask); a1,r=geometry_t80(observed,mask,telea)
-    channels={'obs':observed,'norm':r['normalised'],'mask':mask>0,'depth':cv2.distanceTransform((mask>0).astype(np.uint8),cv2.DIST_L2,5),'horizontal':r['horizontal'],'vertical':r['vertical'],'compact':r['compact'],'preserve':r['preserve'],'remove':r['remove'],'ambiguous':r['ambiguous'],'edge':cv2.Canny(observed,70,170)>0}
-    eligible=(mask>0)&(observed<200)&~r['preserve']; ys,xs=np.where(eligible)
-    return {'seed':seed,'mask':mask,'telea':telea,'a1':a1,'routes':r,'channels':channels,'eligible':eligible,'ys':ys,'xs':xs}
+def build_v78(observed, reviewed_seed):
+
+    observed = np.asarray(
+        observed,
+        dtype=np.uint8,
+    )
+
+    seed = binary(reviewed_seed)
+
+    if observed.ndim != 2:
+        raise RuntimeError(
+            f"Observed must be 2-D grayscale; "
+            f"got {observed.shape}"
+        )
+
+    if observed.shape != seed.shape:
+        raise RuntimeError(
+            "Observed/seed shape mismatch: "
+            f"{observed.shape} vs {seed.shape}"
+        )
+
+    # --------------------------------------------------------
+    # Canonical V7.8
+    # --------------------------------------------------------
+
+    mask = prepare_mask(
+        seed,
+        2,
+    )
+
+    telea = telea_reconstruct(
+        observed,
+        mask,
+    )
+
+    a1, routes = geometry_t80(
+        observed,
+        mask,
+        telea,
+    )
+
+    # --------------------------------------------------------
+    # Frozen A5 observable channels
+    #
+    # IMPORTANT:
+    # obs and norm remain 0..255 uint8 here.
+    # A5 inference_runtime.make_padded() performs /255 itself.
+    # --------------------------------------------------------
+
+    channels = {
+        "obs":
+            observed,
+
+        "norm":
+            routes["normalised"],
+
+        "mask":
+            mask > 0,
+
+        "depth":
+            cv2.distanceTransform(
+                (mask > 0).astype(np.uint8),
+                cv2.DIST_L2,
+                5,
+            ),
+
+        "horizontal":
+            routes["horizontal"],
+
+        "vertical":
+            routes["vertical"],
+
+        "compact":
+            routes["compact"],
+
+        "preserve":
+            routes["preserve"],
+
+        "remove":
+            routes["remove"],
+
+        "ambiguous":
+            routes["ambiguous"],
+
+        "edge":
+            cv2.Canny(
+                observed,
+                70,
+                170,
+            ) > 0,
+    }
+
+    # --------------------------------------------------------
+    # Frozen A5 eligible population
+    # --------------------------------------------------------
+
+    eligible = (
+        (mask > 0)
+        & (observed < 200)
+        & ~routes["preserve"]
+    )
+
+    ys, xs = np.where(eligible)
+
+    return {
+        # Reviewed, undilated HITL authority
+        "seed":
+            seed,
+
+        # Prepared dilation-2 intervention authority
+        "mask":
+            mask,
+
+        "prepared_mask":
+            mask,
+
+        # V7.8 reconstruction artefacts
+        "telea":
+            telea,
+
+        # A1 is exactly frozen geometry_t80
+        "a1":
+            a1,
+
+        "geometry_t80":
+            a1,
+
+        "routes":
+            routes,
+
+        # Frozen 11-channel A5 representation
+        "channels":
+            channels,
+
+        # A5 candidate population
+        "eligible":
+            eligible,
+
+        "ys":
+            ys.astype(np.int64),
+
+        "xs":
+            xs.astype(np.int64),
+    }
