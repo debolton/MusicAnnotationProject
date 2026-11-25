@@ -2,7 +2,7 @@ from pathlib import Path
 from datetime import datetime,timezone
 import io,json,zipfile,cv2,numpy as np
 from fastapi import FastAPI,UploadFile,File,HTTPException
-from fastapi.responses import HTMLResponse,Response,FileResponse
+from fastapi.responses import HTMLResponse,Response,FileResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
@@ -83,3 +83,35 @@ def finish(sid:str):
 def download(sid:str):return FileResponse(store.folder(sid)/'hf_04_2_training_and_audit.zip',filename='hf_04_2_training_and_audit.zip')
 @app.get('/health')
 def health():return {'ok':True,'version':'4.2.0','policy_id':'A5-v1-print-p0980-margin0960-run2'}
+@app.get("/startup-evidence")
+def download_startup_evidence():
+    root = STARTUP_EVIDENCE_DIR
+    required = [
+        root / "ardross_v78_equivalence" / "channel_comparison.csv",
+        root / "ardross_v78_equivalence" / "summary.json",
+    ]
+    missing = [str(p.relative_to(root)) for p in required if not p.exists()]
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail="Startup evidence is not ready: " + ", ".join(missing),
+        )
+
+    files = sorted(p for p in root.rglob("*") if p.is_file())
+    if not files:
+        raise HTTPException(status_code=503, detail="No startup evidence files exist.")
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in files:
+            zf.write(path, arcname=str(path.relative_to(root)))
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="hf_04_4_startup_evidence.zip"',
+            "Cache-Control": "no-store",
+        },
+    )
