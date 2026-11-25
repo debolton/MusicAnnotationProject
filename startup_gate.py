@@ -26,7 +26,7 @@ def gate():
  f=json.loads((BUNDLE/'freeze_manifest.json').read_text()); replay=f.get('replay_passed')
  if f.get('policy_id')!=POLICY_ID:
   raise RuntimeError('A5 freeze failed')
- if replay is not True:
+ if replay is not true:
   raise RuntimeError('Replay gate failed')
  return p
 POLICY=gate()
