@@ -1,26 +1,25 @@
 from pathlib import Path
-from datetime import datetime,timezone
-import io,json,zipfile,shutil,cv2,numpy as np
-from fastapi import FastAPI,UploadFile,File,HTTPException
-from fastapi.responses import HTMLResponse,Response,FileResponse,StreamingResponse
+from datetime import datetime, timezone
+import io, json, zipfile, shutil
+import cv2
+import numpy as np
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import HTMLResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
-from . import store,yolo
+
+from . import store, yolo
 from .a5_operator import A5Operator
+from .canonical_v78 import build_v78
+from .hf045_batch import BatchFailure, run_batch
 from frozen.v8_9.v8_9_operator import load_v89_operator
-from pathlib import Path
-from fastapi import File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
-from app.hf045_batch import BatchFailure, run_batch
-from app.a5_operator import A5Operator
-from app.canonical_v78 import build_v78
 
 BATCH_OUTPUT_ROOT = Path(__file__).resolve().parent.parent / "batch_runs"
 BATCH_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 ROOT=Path(__file__).resolve().parents[1];MODEL=ROOT/'frozen/yolo_detector/best.pt';PP=ROOT/'frozen/p_print_provider_v8_2f';RB=ROOT/'frozen/notebook52f_remove_bundle';_model=None;_op=None;_a5=None
-app=FastAPI(title='HF-04.2 Music Annotation');app.mount('/static',StaticFiles(directory=ROOT/'app/static'),name='static')
+app=FastAPI(title='HHF-04.5 Music Annotation');app.mount('/static',StaticFiles(directory=ROOT/'app/static'),name='static')
 class Stroke(BaseModel):mode:str;brush:float;points:list[list[float]];view_width:int;view_height:int
 class Approval(BaseModel):status:str;note:str=''
 def get_model():
@@ -92,7 +91,7 @@ def finish(sid:str):
 @app.get('/api/session/{sid}/download')
 def download(sid:str):return FileResponse(store.folder(sid)/'hf_04_2_training_and_audit.zip',filename='hf_04_2_training_and_audit.zip')
 @app.get('/health')
-def health():return {'ok':True,'version':'4.2.0','policy_id':'A5-v1-print-p0980-margin0960-run2'}
+def health():return {'ok':True,'version':'4.5.0','policy_id':'A5-v1-print-p0980-margin0960-run2'}
 
 STARTUP_EVIDENCE_DIR = Path("startup_evidence")
 
@@ -147,7 +146,7 @@ async def batch_a1_a5(file: UploadFile = File(...)):
             raise BatchFailure("Uploaded ZIP is empty")
         zip_path = run_batch(
             upload=payload,
-            operator=_a5,
+            operator=get_a5(),
             canonical_v78=build_v78,
             output_root=BATCH_OUTPUT_ROOT,
         )
