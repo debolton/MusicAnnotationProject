@@ -1,1 +1,0 @@
-The HF-03.0 editor interaction contract is retained. Confirm existing PAN/ADD/ERASE/UNDO behaviour, then Authorise. If Authorise fails, record the stage shown in the browser and download the evidence ZIP containing `authorise_status.json`, `authorise_error.txt`, and every completed intermediate.

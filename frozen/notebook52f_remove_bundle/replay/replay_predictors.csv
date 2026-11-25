@@ -1,6 +1,0 @@
-observed_value,normalised_value,paper_value,mask_depth,boundary_distance,distance_to_protected,edge,local_edge_fraction,local_dark_fraction,local_preserve_fraction,local_remove_fraction,local_ambiguous_fraction,local_horizontal_fraction,local_vertical_fraction,local_compact_fraction,p_print,component_id
-66,66,254,1.0,0.0,413.81494,0,0.44,0.44,0.0,0.88,0.12,0.0,0.0,0.0,0.0006328313,1
-0,0,254,1.0,0.0,229.77173,1,0.24,0.24,0.0,0.88,0.12,0.0,0.0,0.0,0.00034457014,6
-50,50,254,1.0,0.0,43.362793,0,0.36,0.56,0.0,0.76,0.16,0.0,0.0,0.0,0.00049851486,54
-19,19,254,1.0,0.0,154.90698,0,0.36,0.4,0.0,0.76,0.24,0.0,0.0,0.0,0.00019535066,37
-57,57,254,1.0,0.0,355.5774,0,0.4,0.48,0.0,0.88,0.12,0.0,0.0,0.0,0.0,79
