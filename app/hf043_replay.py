@@ -90,7 +90,14 @@ def load_replay():
     expected_p=_read_vector(ARDROSS/'expected_probability.csv')
     expected_prov=_read_vector(ARDROSS/'expected_provisional.csv','int')
     expected_final=_read_vector(ARDROSS/'expected_final.csv','int')
+    
     n=len(x)
+    print(f'Length x: {len(x)}')
+    print(f'Length y: {len(y)}')
+    print(f'Length expected_p: {len(expected_p)}')
+    print(f'Length expected_prov: {len(expected_prov)}')
+    print(f'Length expected_final: {len(expected_final)}')
+
     if not all(len(v)==n for v in [y,expected_p,expected_prov,expected_final]): raise ReplayFailure('Ardross replay vectors have inconsistent row counts')
     if n!=5000: raise ReplayFailure(f'Ardross replay must contain 5000 coordinates, found {n}')
     if (x<0).any() or (x>=w).any() or (y<0).any() or (y>=h).any(): raise ReplayFailure('Ardross replay coordinate out of bounds')
