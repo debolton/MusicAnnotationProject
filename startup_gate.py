@@ -35,8 +35,57 @@ def gate():
     from app.hf044_v78_startup import run_ardross_v78_equivalence
     v78=run_ardross_v78_equivalence()  # Writes channel_comparison.csv and blocks on mismatch.
     return policy,operator.startup_replay,v78
-POLICY,ARDROSS_REPLAY,ARDROSS_V78_EQUIVALENCE=gate()
-startup_verdict = write_commissioning_evidence(STARTUP_EVIDENCE,a5_replay_result,v78_summary)
-print("HF-04.4 commissioning startup verdict:", startup_verdict)
-if __name__=='__main__':
-    print(json.dumps({'ready':True,'version':'HF-04.4','policy_id':POLICY_ID,'python':platform.python_version(),'ardross_a5_replay':ARDROSS_REPLAY,'ardross_v78_equivalence':ARDROSS_V78_EQUIVALENCE},indent=2))
+
+# ------------------------------------------------------------
+# RUN BOTH MANDATORY STARTUP GATES
+# ------------------------------------------------------------
+
+POLICY, ARDROSS_REPLAY, ARDROSS_V78_EQUIVALENCE = gate()
+
+
+# ------------------------------------------------------------
+# WRITE COMMISSIONING EVIDENCE
+# ------------------------------------------------------------
+
+STARTUP_EVIDENCE = ROOT / "startup_evidence"
+
+STARTUP_VERDICT = write_commissioning_evidence(
+    STARTUP_EVIDENCE,
+    ARDROSS_REPLAY,
+    ARDROSS_V78_EQUIVALENCE,
+)
+
+print(
+    "HF-04.4 commissioning startup verdict:",
+    json.dumps(
+        STARTUP_VERDICT,
+        indent=2,
+        default=str,
+    ),
+)
+
+
+# ------------------------------------------------------------
+# COMMAND-LINE / DOCKER BUILD REPORT
+# ------------------------------------------------------------
+
+if __name__ == "__main__":
+
+    print(
+        json.dumps(
+            {
+                "ready": True,
+                "version": "HF-04.4",
+                "policy_id": POLICY_ID,
+                "python": platform.python_version(),
+                "ardross_a5_replay": ARDROSS_REPLAY,
+                "ardross_v78_equivalence":
+                    ARDROSS_V78_EQUIVALENCE,
+                "startup_verdict": STARTUP_VERDICT,
+                "startup_evidence_directory":
+                    str(STARTUP_EVIDENCE.resolve()),
+            },
+            indent=2,
+            default=str,
+        )
+    )
