@@ -224,6 +224,148 @@ def read_session_png(sid: str, filename: str) -> np.ndarray:
 
     return image
 
+def a5_decision_overlay(
+    observed: np.ndarray,
+    final: np.ndarray,
+    eligible: np.ndarray,
+    alpha: float = 0.55,
+    display_radius: int = 1,
+) -> np.ndarray:
+    """
+    Diagnostic A5-v1 decision overlay.
+
+    PRINT      -> green
+    ANNOTATION -> red
+    UNCERTAIN  -> yellow
+
+    display_radius=1 expands each classified pixel to 3x3 for
+    visibility only. It does NOT change the underlying decisions.
+    """
+
+    observed = require_image(
+        observed,
+        "A5 decision-overlay observed page",
+    )
+
+    final = np.asarray(final)
+
+    if final.shape != observed.shape:
+        raise RuntimeError(
+            "A5 decision-overlay shape mismatch: "
+            f"observed={observed.shape}, "
+            f"final={final.shape}"
+        )
+
+    eligible = np.asarray(
+        eligible,
+        dtype=bool,
+    )
+
+    if eligible.shape != observed.shape:
+        raise RuntimeError(
+            "A5 decision-overlay eligibility shape mismatch"
+        )
+
+    print_mask = (
+        eligible
+        & (final == "PRINT")
+    )
+
+    annotation_mask = (
+        eligible
+        & (final == "ANNOTATION")
+    )
+
+    uncertain_mask = (
+        eligible
+        & (final == "UNCERTAIN")
+    )
+
+    # Optional visibility enlargement.
+    # This is DISPLAY ONLY.
+    if display_radius > 0:
+        kernel = np.ones(
+            (
+                2 * display_radius + 1,
+                2 * display_radius + 1,
+            ),
+            dtype=np.uint8,
+        )
+
+        print_display = (
+            cv2.dilate(
+                print_mask.astype(np.uint8),
+                kernel,
+            )
+            > 0
+        )
+
+        annotation_display = (
+            cv2.dilate(
+                annotation_mask.astype(np.uint8),
+                kernel,
+            )
+            > 0
+        )
+
+        uncertain_display = (
+            cv2.dilate(
+                uncertain_mask.astype(np.uint8),
+                kernel,
+            )
+            > 0
+        )
+    else:
+        print_display = print_mask
+        annotation_display = annotation_mask
+        uncertain_display = uncertain_mask
+
+    base = cv2.cvtColor(
+        observed,
+        cv2.COLOR_GRAY2BGR,
+    )
+
+    colour = base.copy()
+
+    # OpenCV uses BGR.
+    colour[print_display] = (
+        0,
+        255,
+        0,
+    )
+
+    colour[annotation_display] = (
+        0,
+        0,
+        255,
+    )
+
+    # Yellow in BGR.
+    colour[uncertain_display] = (
+        0,
+        255,
+        255,
+    )
+
+    active = (
+        print_display
+        | annotation_display
+        | uncertain_display
+    )
+
+    output = base.copy()
+
+    blended = cv2.addWeighted(
+        base,
+        1.0 - alpha,
+        colour,
+        alpha,
+        0,
+    )
+
+    output[active] = blended[active]
+
+    return output
 
 # ---------------------------------------------------------------------------
 # Operational result validation
@@ -1135,6 +1277,14 @@ def authorise(sid: str):
         provisional = result["provisional"]
         final = result["final"]
 
+        decision_overlay = a5_decision_overlay(
+            observed=observed,
+            final=final,
+            eligible=eligible_a5_v1,
+            alpha=0.55,
+            display_radius=1,
+        )
+
         preserve = routes["preserve"]
         remove = routes["remove"]
         ambiguous = routes["ambiguous"]
@@ -1178,6 +1328,11 @@ def authorise(sid: str):
         write_png(
             directory / "route_remove.png",
             remove,
+        )
+
+        write_png(
+            directory / "a5_decision_overlay.png",
+            decision_overlay,
         )
 
         write_png(
@@ -1520,6 +1675,7 @@ def diagnostic(sid: str, name: str):
         "clean": "a5_print_mask.png",
         "delta": "a5_delta_from_a1.png",
         "a5": "a5_corrected.png",
+        "decisions": "a5_decision_overlay.png",
 
         # Temporary compatibility aliases for the current front end.
         "ring2": "a5_eligible_ambiguous.png",
@@ -1603,6 +1759,7 @@ def finish(sid: str):
         "a5_print_mask.png",
         "a5_corrected.png",
         "a5_delta_from_a1.png",
+        "a5_decision_overlay.png"
         "operational_correction_audit.json",
     ]
 
