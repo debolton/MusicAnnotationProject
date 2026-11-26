@@ -27,6 +27,9 @@ def gate():
         rel=r.get('relative_path') or r.get('path') or r.get('file'); expected=r.get('sha256') or r.get('SHA-256')
         if not rel or generated(rel): continue
         q=BUNDLE/rel
+        print(f'Filename: {q}')
+        print(f'SHA-256: {sha(q)}')
+        print('')
         if not q.exists() or sha(q)!=expected: raise RuntimeError(f'A5 artefact failure: {rel}')
     if metadata.version('scikit-learn')!='1.6.1': raise RuntimeError('scikit-learn must be 1.6.1')
     if metadata.version('joblib')!='1.6.0': raise RuntimeError('joblib must be 1.6.0')
