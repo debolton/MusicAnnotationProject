@@ -419,6 +419,24 @@ async def create(file: UploadFile = File(...)):
         file.filename or "upload",
     )
 
+    session = store.load(sid)
+
+    if session["gray"].shape != session["working"].shape:
+        raise RuntimeError(
+            "Session creation corrupted mask dimensions: "
+            f"gray={session['gray'].shape}, "
+            f"working={session['working'].shape}"
+        )
+
+    if not np.array_equal(
+        session["working"] > 0,
+        draft > 0,
+    ):
+        raise RuntimeError(
+            "Session working mask differs from YOLO draft "
+            "immediately after session creation"
+        )
+
     directory = store.folder(sid)
 
     write_png(directory / "annotated_page.png", page)
@@ -441,16 +459,84 @@ def image(sid: str):
     return png(store.load(sid)["gray"])
 
 
+def overlay(gray: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    gray = np.asarray(gray)
+    mask = np.asarray(mask)
+
+    if gray.ndim != 2:
+        raise RuntimeError(
+            f"Overlay gray must be 2-D; got "
+            f"shape={gray.shape}, dtype={gray.dtype}"
+        )
+
+    if mask.ndim != 2:
+        raise RuntimeError(
+            f"Overlay mask must be 2-D; got "
+            f"shape={mask.shape}, dtype={mask.dtype}"
+        )
+
+    if gray.shape != mask.shape:
+        raise RuntimeError(
+            f"Overlay gray/mask shape mismatch: "
+            f"gray={gray.shape}, mask={mask.shape}"
+        )
+
+    gray = np.clip(gray, 0, 255).astype(np.uint8)
+    active = mask > 0
+
+    rgb = cv2.cvtColor(
+        gray,
+        cv2.COLOR_GRAY2BGR,
+    )
+
+    colour = rgb.copy()
+
+    # Red overlay in OpenCV BGR order.
+    colour[active] = (60, 60, 255)
+
+    result = cv2.addWeighted(
+        rgb,
+        0.62,
+        colour,
+        0.38,
+        0,
+    )
+
+    return result
+
 @app.get("/api/session/{sid}/overlay")
 def session_overlay(sid: str, rev: int = 0):
-    del rev
-    session = store.load(sid)
-    return png(
-        overlay(
-            session["gray"],
-            session["working"],
+    try:
+        session = store.load(sid)
+
+        if "gray" not in session:
+            raise RuntimeError(
+                "Session has no 'gray' array"
+            )
+
+        if "working" not in session:
+            raise RuntimeError(
+                "Session has no 'working' mask"
+            )
+
+        return png(
+            overlay(
+                session["gray"],
+                session["working"],
+            )
         )
-    )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Overlay generation failed",
+                "session_id": sid,
+                "revision": rev,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        ) from exc
 
 
 @app.post("/api/session/{sid}/stroke")
@@ -590,6 +676,27 @@ def undo(sid: str):
         ),
     }
 
+@app.get("/api/session/{sid}/mask")
+def session_mask(sid: str):
+    session = store.load(sid)
+
+    mask = np.asarray(
+        session["working"]
+    )
+
+    if mask.ndim != 2:
+        raise HTTPException(
+            500,
+            f"Working mask shape is {mask.shape}",
+        )
+
+    return png(
+        np.where(
+            mask > 0,
+            255,
+            0,
+        ).astype(np.uint8)
+    )
 
 # ---------------------------------------------------------------------------
 # Correction authorisation
