@@ -212,14 +212,31 @@ def png(image: np.ndarray) -> Response:
     )
 
 
-def read_session_png(sid: str, filename: str) -> np.ndarray:
+def read_session_png(
+    sid: str,
+    filename: str,
+    colour: bool = False,
+) -> np.ndarray:
     path = store.folder(sid) / filename
-    image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+
+    flags = (
+        cv2.IMREAD_COLOR
+        if colour
+        else cv2.IMREAD_GRAYSCALE
+    )
+
+    image = cv2.imread(
+        str(path),
+        flags,
+    )
 
     if image is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Session artefact not found: {filename}",
+            detail=(
+                "Session artefact not found: "
+                f"{filename}"
+            ),
         )
 
     return image
@@ -1667,21 +1684,24 @@ def diagnostic(sid: str, name: str):
         "mask": "prepared_dilation2_mask.png",
         "telea": "telea_diagnostic.png",
         "paper": "paper_estimate.png",
+
         "preserve": "route_preserve.png",
         "remove": "route_remove.png",
         "ambiguous": "route_ambiguous.png",
-        "a1": "a1_corrected.png",
-        "eligible_a5_v1": "a5_eligible_ambiguous.png",
-        "clean": "a5_print_mask.png",
-        "delta": "a5_delta_from_a1.png",
+
+        "v78": "v7_8_corrected.png",
+        "eligible_a5_v1": "a5_eligible.png",
+        "print": "a5_print_mask.png",
+
+        "delta": "a5_delta_from_v7_8.png",
         "a5": "a5_corrected.png",
         "decisions": "a5_decision_overlay.png",
 
         # Temporary compatibility aliases for the current front end.
+        "clean": "a5_print_mask.png",
         "ring2": "a5_eligible_ambiguous.png",
         "safe_remove": "route_remove.png",
         "m5": "a5_corrected.png",
-        "v78": "a1_corrected.png",
         "v88": "a5_corrected.png",
     }
 
@@ -1693,7 +1713,15 @@ def diagnostic(sid: str, name: str):
             detail="Unknown diagnostic",
         )
 
-    return png(read_session_png(sid, filename))
+    return png(
+        read_session_png(
+            sid,
+            filename,
+            colour=(
+                name == "decisions"
+            ),
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1711,20 +1739,29 @@ def approval(sid: str, value: Approval):
     if value.status not in allowed:
         raise HTTPException(
             status_code=400,
-            detail="Invalid status",
+            detail=f"Invalid status: {value.status}",
         )
 
     directory = store.folder(sid)
+
+    if not directory.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown session: {sid}",
+        )
+
+    record = {
+        "utc": datetime.now(timezone.utc).isoformat(),
+        "session_id": sid,
+        "status": value.status,
+        "note": value.note,
+    }
 
     (
         directory / "whole_page_review.json"
     ).write_text(
         json.dumps(
-            {
-                "utc": datetime.now(timezone.utc).isoformat(),
-                "status": value.status,
-                "note": value.note,
-            },
+            record,
             indent=2,
         )
     )
@@ -1732,13 +1769,87 @@ def approval(sid: str, value: Approval):
     return {
         "ok": True,
         "status": value.status,
+        "finish_url": (
+            f"/api/session/{sid}/finish"
+            if value.status == "approved"
+            else None
+        ),
+        "download_url": (
+            f"/api/session/{sid}/download"
+            if value.status == "approved"
+            else None
+        ),
+        "corrected_url": (
+            f"/api/session/{sid}/result"
+        ),
+        "decision_overlay_url": (
+            f"/api/session/{sid}/diagnostic/decisions"
+        ),
+        "mask_overlay_url": (
+            f"/api/session/{sid}/overlay"
+        ),
     }
 
+@app.post("/api/session/{sid}/approve")
+def approve_compatibility(
+    sid: str,
+    value: Approval,
+):
+    return approval(
+        sid,
+        value,
+    )
 
 @app.post("/api/session/{sid}/finish")
 def finish(sid: str):
     directory = store.folder(sid)
     session = store.load(sid)
+
+    review_path = (
+        directory / "whole_page_review.json"
+    )
+
+    if not review_path.is_file():
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "The page has not received a "
+                    "whole-page review decision."
+                ),
+                "approval_url": (
+                    f"/api/session/{sid}/approval"
+                ),
+            },
+        )
+
+    try:
+        review = json.loads(
+            review_path.read_text()
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "The whole-page review record "
+                f"is unreadable: {exc}"
+            ),
+        ) from exc
+
+    if review.get("status") != "approved":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "The page is not approved "
+                    "for packaging."
+                ),
+                "review_status": review.get(
+                    "status"
+                ),
+            },
+        )
+
 
     write_png(
         directory / "reviewed_authoritative_seed_mask.png",
@@ -1748,18 +1859,26 @@ def finish(sid: str):
     required = [
         "annotated_page.png",
         "reviewed_authoritative_seed_mask.png",
+        "whole_page_review.json",
+
         "prepared_dilation2_mask.png",
         "route_preserve.png",
         "route_remove.png",
         "route_ambiguous.png",
         "paper_estimate.png",
         "telea_diagnostic.png",
-        "a1_corrected.png",
-        "a5_eligible_ambiguous.png",
+        
+        "v7_8_corrected.png",
+        "a5_eligible.png",
         "a5_print_mask.png",
         "a5_corrected.png",
-        "a5_delta_from_a1.png",
-        "a5_decision_overlay.png"
+        "a5_delta_from_v7_8.png",
+        "a5_decision_overlay.png",
+
+        "a5_print_probability.npy",
+        "a5_provisional_decision.npy",
+        "a5_final_decision.npy",
+
         "operational_correction_audit.json",
     ]
 
@@ -1794,7 +1913,17 @@ def finish(sid: str):
             "reviewed_authoritative_seed_mask.png",
         ],
         "raw_yolo_is_training_truth": False,
-        "telea_is_diagnostic_only": True,
+        "telea_separate_file_is_diagnostic": True,
+        "telea_contributes_to_v78_ambiguous": True,
+        "a5_print_action": (
+            "COPY_EXACT_OBSERVED_BYTE"
+        ),
+        "a5_non_print_fallback": (
+            "V7.8 geometry_t80"
+        ),
+        "outside_authoritative_mask": (
+            "IMMUTABLE_OBSERVED"
+        ),
         "historical_notebook91_is_operational": False,
         "files": [],
     }
@@ -1856,7 +1985,9 @@ def health():
     return {
         "ok": True,
         "version": APP_VERSION,
-        "correction_contract": CORRECTION_CONTRACT,
+        "correction_contract": (
+            CORRECTION_CONTRACT
+        ),
         "v78_policy_id": getattr(
             operator,
             "v78_policy_id",
@@ -1873,24 +2004,35 @@ def health():
             None,
         ),
         "device": get_device(),
-        "telea_operational": False,
+
+        "telea_operational": True,
+        "telea_role": (
+            "V7.8 AMBIGUOUS-route fallback"
+        ),
+
+        "a5_print_action": (
+            "COPY_EXACT_OBSERVED_BYTE"
+        ),
+        "a5_non_print_fallback": (
+            "V7.8 geometry_t80"
+        ),
+
         "historical_notebook91_operational": False,
     }
-
 
 @app.get("/startup-evidence")
 def download_startup_evidence():
     root = STARTUP_EVIDENCE_DIR
 
     verdict = root / "startup_verdict.json"
-    a1_replay = (
-        root
-        / "operational_a1_replay"
-        / "replay_result.json"
-    )
     a5_replay = (
         root
-        / "safe_cleanup_a5_replay"
+        / "ardross_a5_replay"
+        / "replay_result.json"
+    )
+    v78_replay = (
+        root
+        / "v78_routing_equivalence"
         / "replay_result.json"
     )
     v78_summary = (
@@ -1983,17 +2125,20 @@ def startup_evidence_status():
 # HF-04.5 batch
 # ---------------------------------------------------------------------------
 
-@app.post("/batch-a1-a5")
-async def batch_a1_a5(file: UploadFile = File(...)):
+@app.post("/batch-v78-a5")
+async def batch_v78_a5(
+    file: UploadFile = File(...),
+):
     """
-    HF-04.5 remains fail-closed until hf045_batch.run_batch has been
-    updated to consume A5Operator and the operational A1/A5
-    result contract.
-
-    Do not send the historical Notebook 91 A5Operator into this route.
+    HF-04.5 batch remains fail-closed until run_batch()
+    consumes the frozen V7.8 + A5-v1 observed-PRINT
+    operational contract.
     """
 
-    if not file.filename or not file.filename.lower().endswith(".zip"):
+    if (
+        not file.filename
+        or not file.filename.lower().endswith(".zip")
+    ):
         raise HTTPException(
             status_code=400,
             detail="Upload one .zip file",
@@ -2002,8 +2147,9 @@ async def batch_a1_a5(file: UploadFile = File(...)):
     raise HTTPException(
         status_code=503,
         detail=(
-            "HF-04.5 batch is paused until hf045_batch.run_batch "
-            "is updated and regression-tested for operational A1 "
-            "plus AMBIGUOUS-only safe-cleanup A5."
+            "HF-04.5 batch is paused until "
+            "hf045_batch.run_batch is updated and "
+            "regression-tested for frozen V7.8 plus "
+            "A5-v1 observed-PRINT processing."
         ),
     )
