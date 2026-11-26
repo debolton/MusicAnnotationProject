@@ -245,21 +245,24 @@ def validate_operational_result(
     result: dict,
 ) -> dict:
     """
-    Enforce the main.py-facing correction contract.
+    Validate the frozen V7.8 + A5-v1 observed-PRINT contract.
 
-    Required semantics:
-
-    A1:
+    Frozen V7.8 baseline:
         PRESERVE  -> observed
         REMOVE    -> paper
-        AMBIGUOUS -> observed
-        outside mask -> observed
+        AMBIGUOUS -> Telea
 
-    A5:
-        eligible set -> AMBIGUOUS only
-        CLEAN        -> paper
-        non-CLEAN    -> exact A1
-        outside mask -> observed
+    Frozen A5-v1:
+        eligible population:
+            authoritative mask
+            AND observed < 200
+            AND NOT V7.8 PRESERVE
+
+        PRINT      -> exact observed byte
+        ANNOTATION -> exact V7.8 baseline
+        UNCERTAIN  -> exact V7.8 baseline
+
+        outside authoritative mask -> exact observed byte
     """
 
     required = {
@@ -267,44 +270,90 @@ def validate_operational_result(
         "telea",
         "paper",
         "routes",
-        "a1",
+        "geometry_t80",
         "a5",
-        "eligible",
-        "p_clean",
+        "eligible_a5_v1",
+        "p_print",
         "provisional",
         "final",
-        "clean_mask",
+        "print_mask",
     }
 
-    missing = sorted(required - set(result))
+    missing = sorted(
+        required - set(result)
+    )
+
     if missing:
         raise RuntimeError(
-            f"Correction operator omitted required fields: {missing}"
+            "Correction operator omitted required fields: "
+            f"{missing}"
         )
 
     shape = observed.shape
 
-    mask = require_bool_mask(result["mask"], "mask", shape)
-    telea = require_image(result["telea"], "telea", shape)
-    paper = require_image(result["paper"], "paper", shape)
-    a1 = require_image(result["a1"], "a1", shape)
-    a5 = require_image(result["a5"], "a5", shape)
-    eligible = require_bool_mask(result["eligible"], "eligible", shape)
-    clean_mask = require_bool_mask(
-        result["clean_mask"],
-        "clean_mask",
+    mask = require_bool_mask(
+        result["mask"],
+        "mask",
+        shape,
+    )
+
+    telea = require_image(
+        result["telea"],
+        "telea",
+        shape,
+    )
+
+    paper = require_image(
+        result["paper"],
+        "paper",
+        shape,
+    )
+
+    baseline = require_image(
+        result["geometry_t80"],
+        "geometry_t80",
+        shape,
+    )
+
+    a5 = require_image(
+        result["a5"],
+        "a5",
+        shape,
+    )
+
+    eligible_a5_v1 = require_bool_mask(
+        result["eligible_a5_v1"],
+        "eligible_a5_v1",
+        shape,
+    )
+
+    print_mask = require_bool_mask(
+        result["print_mask"],
+        "print_mask",
         shape,
     )
 
     routes = result["routes"]
-    if not isinstance(routes, dict):
-        raise RuntimeError("result['routes'] must be a dictionary")
 
-    route_names = {"preserve", "remove", "ambiguous"}
-    missing_routes = sorted(route_names - set(routes))
+    if not isinstance(routes, dict):
+        raise RuntimeError(
+            "result['routes'] must be a dictionary"
+        )
+
+    route_names = {
+        "preserve",
+        "remove",
+        "ambiguous",
+    }
+
+    missing_routes = sorted(
+        route_names - set(routes)
+    )
+
     if missing_routes:
         raise RuntimeError(
-            f"Correction operator omitted routes: {missing_routes}"
+            "Correction operator omitted routes: "
+            f"{missing_routes}"
         )
 
     preserve = require_bool_mask(
@@ -312,124 +361,427 @@ def validate_operational_result(
         "route preserve",
         shape,
     )
+
     remove = require_bool_mask(
         routes["remove"],
         "route remove",
         shape,
     )
+
     ambiguous = require_bool_mask(
         routes["ambiguous"],
         "route ambiguous",
         shape,
     )
 
-    if np.any(preserve & remove):
-        raise RuntimeError("PRESERVE and REMOVE routes overlap")
+    # ------------------------------------------------------------
+    # Frozen V7.8 route integrity
+    # ------------------------------------------------------------
 
-    if np.any(preserve & ambiguous):
-        raise RuntimeError("PRESERVE and AMBIGUOUS routes overlap")
-
-    if np.any(remove & ambiguous):
-        raise RuntimeError("REMOVE and AMBIGUOUS routes overlap")
-
-    routed = preserve | remove | ambiguous
-
-    if np.any(routed & ~mask):
+    if np.any(
+        preserve & remove
+    ):
         raise RuntimeError(
-            "A correction route exists outside the prepared mask"
+            "PRESERVE and REMOVE routes overlap"
         )
 
-    if np.any(mask & ~routed):
+    if np.any(
+        preserve & ambiguous
+    ):
         raise RuntimeError(
-            "Prepared-mask pixels are missing a correction route"
+            "PRESERVE and AMBIGUOUS routes overlap"
         )
 
-    if np.any(a1[preserve] != observed[preserve]):
+    if np.any(
+        remove & ambiguous
+    ):
         raise RuntimeError(
-            "A1 PRESERVE does not reproduce observed bytes"
+            "REMOVE and AMBIGUOUS routes overlap"
         )
 
-    if np.any(a1[remove] != paper[remove]):
-        raise RuntimeError(
-            "A1 REMOVE does not reproduce paper-estimate bytes"
+    routed = (
+        preserve
+        | remove
+        | ambiguous
+    )
+
+    if not np.array_equal(
+        routed,
+        mask,
+    ):
+        missing_route = int(
+            np.sum(
+                mask & ~routed
+            )
         )
 
-    if np.any(a1[ambiguous] != observed[ambiguous]):
-        raise RuntimeError(
-            "A1 AMBIGUOUS does not reproduce observed bytes"
+        escaped_route = int(
+            np.sum(
+                routed & ~mask
+            )
         )
 
-    if np.any(a1[~mask] != observed[~mask]):
-        raise RuntimeError("A1 changed pixels outside the prepared mask")
-
-    if np.any(eligible & ~ambiguous):
         raise RuntimeError(
-            "Operational A5 eligibility includes non-AMBIGUOUS pixels"
+            "V7.8 routes do not exactly partition "
+            "the prepared mask: "
+            f"missing={missing_route}, "
+            f"outside={escaped_route}"
         )
 
-    if np.any(clean_mask & ~eligible):
+    # ------------------------------------------------------------
+    # Frozen V7.8 output contract
+    # ------------------------------------------------------------
+
+    if np.any(
+        baseline[preserve]
+        != observed[preserve]
+    ):
         raise RuntimeError(
-            "A5 CLEAN includes pixels outside its eligible population"
+            "V7.8 PRESERVE does not reproduce observed bytes"
         )
 
-    if np.any(a5[clean_mask] != paper[clean_mask]):
+    if np.any(
+        baseline[remove]
+        != paper[remove]
+    ):
         raise RuntimeError(
-            "A5 CLEAN output does not reproduce paper-estimate bytes"
+            "V7.8 REMOVE does not reproduce paper bytes"
         )
 
-    if np.any(a5[~clean_mask] != a1[~clean_mask]):
+    if np.any(
+        baseline[ambiguous]
+        != telea[ambiguous]
+    ):
         raise RuntimeError(
-            "A5 non-CLEAN output differs from A1"
+            "V7.8 AMBIGUOUS does not reproduce Telea bytes"
         )
 
-    if np.any(a5[~ambiguous] != a1[~ambiguous]):
+    if np.any(
+        baseline[~mask]
+        != observed[~mask]
+    ):
         raise RuntimeError(
-            "A5 changed pixels outside the AMBIGUOUS route"
+            "V7.8 changed pixels outside the prepared mask"
         )
 
-    if np.any(a5[~mask] != observed[~mask]):
-        raise RuntimeError("A5 changed pixels outside the prepared mask")
+    # ------------------------------------------------------------
+    # Frozen A5-v1 candidate population
+    # ------------------------------------------------------------
 
-    p_clean = np.asarray(result["p_clean"])
+    expected_eligible = (
+        mask
+        & (observed < 200)
+        & ~preserve
+    )
 
-    if p_clean.shape != shape:
-        raise RuntimeError(
-            f"p_clean shape mismatch: expected {shape}, "
-            f"found {p_clean.shape}"
+    if not np.array_equal(
+        eligible_a5_v1,
+        expected_eligible,
+    ):
+        missing_eligible = int(
+            np.sum(
+                expected_eligible
+                & ~eligible_a5_v1
+            )
         )
 
-    if not np.isfinite(p_clean[eligible]).all():
-        raise RuntimeError(
-            "p_clean contains non-finite values at eligible coordinates"
+        unexpected_eligible = int(
+            np.sum(
+                eligible_a5_v1
+                & ~expected_eligible
+            )
         )
 
-    provisional = np.asarray(result["provisional"])
-    final = np.asarray(result["final"])
+        raise RuntimeError(
+            "A5-v1 eligible population mismatch: "
+            f"missing={missing_eligible}, "
+            f"unexpected={unexpected_eligible}"
+        )
+
+    if np.any(
+        print_mask & ~eligible_a5_v1
+    ):
+        raise RuntimeError(
+            "A5-v1 PRINT exists outside the "
+            "eligible population"
+        )
+
+    # ------------------------------------------------------------
+    # Frozen A5-v1 output contract
+    # ------------------------------------------------------------
+
+    if np.any(
+        a5[print_mask]
+        != observed[print_mask]
+    ):
+        raise RuntimeError(
+            "A5-v1 PRINT output does not equal "
+            "the exact observed byte"
+        )
+
+    if np.any(
+        a5[~print_mask]
+        != baseline[~print_mask]
+    ):
+        raise RuntimeError(
+            "A5-v1 non-PRINT output differs "
+            "from frozen V7.8"
+        )
+
+    if np.any(
+        a5[~mask]
+        != observed[~mask]
+    ):
+        raise RuntimeError(
+            "A5-v1 changed pixels outside "
+            "the authoritative mask"
+        )
+
+    changed = (
+        a5 != baseline
+    )
+
+    expected_changed = (
+        print_mask
+        & (observed != baseline)
+    )
+
+    if not np.array_equal(
+        changed,
+        expected_changed,
+    ):
+        unexpected_changes = int(
+            np.sum(
+                changed
+                & ~expected_changed
+            )
+        )
+
+        missing_changes = int(
+            np.sum(
+                expected_changed
+                & ~changed
+            )
+        )
+
+        raise RuntimeError(
+            "A5-v1 page delta does not equal "
+            "effective PRINT restoration: "
+            f"unexpected={unexpected_changes}, "
+            f"missing={missing_changes}"
+        )
+
+    if np.any(
+        changed
+        & (a5 != observed)
+    ):
+        raise RuntimeError(
+            "A5-v1 changed byte does not "
+            "equal observed"
+        )
+
+    # ------------------------------------------------------------
+    # Probability and decision arrays
+    # ------------------------------------------------------------
+
+    p_print = np.asarray(
+        result["p_print"]
+    )
+
+    if p_print.shape != shape:
+        raise RuntimeError(
+            "p_print shape mismatch: "
+            f"expected {shape}, "
+            f"found {p_print.shape}"
+        )
+
+    if not np.isfinite(
+        p_print[eligible_a5_v1]
+    ).all():
+        raise RuntimeError(
+            "p_print contains non-finite values "
+            "at eligible coordinates"
+        )
+
+    if np.any(
+        p_print[eligible_a5_v1] < 0.0
+    ) or np.any(
+        p_print[eligible_a5_v1] > 1.0
+    ):
+        raise RuntimeError(
+            "p_print lies outside 0..1"
+        )
+
+    provisional = np.asarray(
+        result["provisional"]
+    )
+
+    final = np.asarray(
+        result["final"]
+    )
 
     if provisional.shape != shape:
         raise RuntimeError(
-            "provisional decision array shape mismatch"
+            "Provisional decision array "
+            f"shape mismatch: {provisional.shape}"
         )
 
     if final.shape != shape:
-        raise RuntimeError("final decision array shape mismatch")
+        raise RuntimeError(
+            "Final decision array "
+            f"shape mismatch: {final.shape}"
+        )
+
+    valid_classes = {
+        "PRINT",
+        "ANNOTATION",
+        "UNCERTAIN",
+        "INELIGIBLE",
+    }
+
+    provisional_classes = set(
+        provisional.astype(str).ravel()
+    )
+
+    final_classes = set(
+        final.astype(str).ravel()
+    )
+
+    unexpected_provisional = (
+        provisional_classes
+        - valid_classes
+    )
+
+    unexpected_final = (
+        final_classes
+        - valid_classes
+    )
+
+    if unexpected_provisional:
+        raise RuntimeError(
+            "Unexpected provisional A5-v1 classes: "
+            f"{sorted(unexpected_provisional)}"
+        )
+
+    if unexpected_final:
+        raise RuntimeError(
+            "Unexpected final A5-v1 classes: "
+            f"{sorted(unexpected_final)}"
+        )
+
+    # Every eligible coordinate must have a real decision.
+    if np.any(
+        provisional[eligible_a5_v1]
+        == "INELIGIBLE"
+    ):
+        raise RuntimeError(
+            "Eligible A5-v1 coordinate has no "
+            "provisional decision"
+        )
+
+    if np.any(
+        final[eligible_a5_v1]
+        == "INELIGIBLE"
+    ):
+        raise RuntimeError(
+            "Eligible A5-v1 coordinate has no "
+            "final decision"
+        )
+
+    # Every non-eligible coordinate must remain outside the
+    # classifier population.
+    if np.any(
+        provisional[~eligible_a5_v1]
+        != "INELIGIBLE"
+    ):
+        raise RuntimeError(
+            "A5-v1 provisional decision exists "
+            "outside eligibility"
+        )
+
+    if np.any(
+        final[~eligible_a5_v1]
+        != "INELIGIBLE"
+    ):
+        raise RuntimeError(
+            "A5-v1 final decision exists "
+            "outside eligibility"
+        )
+
+    expected_print_mask = (
+        final == "PRINT"
+    )
+
+    if not np.array_equal(
+        print_mask,
+        expected_print_mask,
+    ):
+        missing_print = int(
+            np.sum(
+                expected_print_mask
+                & ~print_mask
+            )
+        )
+
+        unexpected_print = int(
+            np.sum(
+                print_mask
+                & ~expected_print_mask
+            )
+        )
+
+        raise RuntimeError(
+            "A5-v1 PRINT mask does not equal "
+            "final PRINT decisions: "
+            f"missing={missing_print}, "
+            f"unexpected={unexpected_print}"
+        )
+
+    # Run filtering may demote PRINT to UNCERTAIN.
+    # It must not manufacture a new PRINT decision.
+    if np.any(
+        (final == "PRINT")
+        & (provisional != "PRINT")
+    ):
+        raise RuntimeError(
+            "A5-v1 run filter created a new PRINT decision"
+        )
+
+    if np.any(
+        (provisional == "ANNOTATION")
+        & (final != "ANNOTATION")
+    ):
+        raise RuntimeError(
+            "A5-v1 run filter altered "
+            "an ANNOTATION decision"
+        )
+
+    # ------------------------------------------------------------
+    # Normalised result returned to main.py
+    # ------------------------------------------------------------
 
     result["mask"] = mask
     result["telea"] = telea
     result["paper"] = paper
+
     result["routes"] = {
         **routes,
         "preserve": preserve,
         "remove": remove,
         "ambiguous": ambiguous,
     }
-    result["a1"] = a1
+
+    result["geometry_t80"] = baseline
+    result["a1"] = baseline
     result["a5"] = a5
-    result["eligible"] = eligible
-    result["clean_mask"] = clean_mask
-    result["p_clean"] = p_clean
+
+    result["eligible_a5_v1"] = eligible_a5_v1
+    result["eligible_a5_v1"] = eligible_a5_v1
+
+    result["p_print"] = p_print
     result["provisional"] = provisional
     result["final"] = final
+    result["print_mask"] = print_mask
 
     return result
 
@@ -802,8 +1154,8 @@ def authorise(sid: str):
     routes = result["routes"]
     a1 = result["a1"]
     a5 = result["a5"]
-    clean_mask = result["clean_mask"]
-    eligible = result["eligible"]
+    print_mask = result["print_mask"]
+    eligible_a5_v1 = result["eligible_a5_v1"]
 
     write_png(
         directory / "prepared_dilation2_mask.png",
@@ -837,11 +1189,11 @@ def authorise(sid: str):
     )
     write_png(
         directory / "a5_eligible_ambiguous.png",
-        eligible,
+        eligible_a5_v1,
     )
     write_png(
-        directory / "a5_clean_mask.png",
-        clean_mask,
+        directory / "a5_print_mask.png",
+        print_mask,
     )
     write_png(
         directory / "a5_corrected.png",
@@ -866,7 +1218,7 @@ def authorise(sid: str):
     )
 
     outside_mask = ~mask
-    non_clean = ~clean_mask
+    non_clean = ~print_mask
 
     audit = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -891,8 +1243,8 @@ def authorise(sid: str):
         "ambiguous_pixels": int(
             routes["ambiguous"].sum()
         ),
-        "a5_eligible_pixels": int(eligible.sum()),
-        "a5_clean_pixels": int(clean_mask.sum()),
+        "a5_eligible_pixels": int(eligible_a5_v1.sum()),
+        "a5_clean_pixels": int(print_mask.sum()),
         "a5_changed_from_a1": int(
             np.sum(a5 != a1)
         ),
@@ -913,8 +1265,8 @@ def authorise(sid: str):
         ),
         "a5_clean_not_equal_paper": int(
             np.sum(
-                a5[clean_mask]
-                != result["paper"][clean_mask]
+                a5[print_mask]
+                != result["paper"][print_mask]
             )
         ),
         "telea_contributes_to_a1": False,
@@ -985,8 +1337,8 @@ def diagnostic(sid: str, name: str):
         "remove": "route_remove.png",
         "ambiguous": "route_ambiguous.png",
         "a1": "a1_corrected.png",
-        "eligible": "a5_eligible_ambiguous.png",
-        "clean": "a5_clean_mask.png",
+        "eligible_a5_v1": "a5_eligible_ambiguous.png",
+        "clean": "a5_print_mask.png",
         "delta": "a5_delta_from_a1.png",
         "a5": "a5_corrected.png",
 
@@ -1069,7 +1421,7 @@ def finish(sid: str):
         "telea_diagnostic.png",
         "a1_corrected.png",
         "a5_eligible_ambiguous.png",
-        "a5_clean_mask.png",
+        "a5_print_mask.png",
         "a5_corrected.png",
         "a5_delta_from_a1.png",
         "operational_correction_audit.json",
