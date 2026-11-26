@@ -650,10 +650,6 @@ def geometry_t80(
     return historical, routes
 
 
-# ---------------------------------------------------------------------------
-# Corrected operational A1
-# ---------------------------------------------------------------------------
-
 def assemble_operational_a1(
     observed: np.ndarray,
     mask: np.ndarray,
@@ -662,10 +658,9 @@ def assemble_operational_a1(
     """
     Corrected operational A1.
 
-    Operational semantics:
         PRESERVE  -> observed
         REMOVE    -> paper
-        AMBIGUOUS -> observed
+
 
     Telea does not contribute any operational A1 bytes.
     """
@@ -901,20 +896,21 @@ def build_v78(
     reviewed_seed: np.ndarray,
 ) -> dict:
     """
-    Build the historical V7.8 diagnostics and corrected operational A1.
+    Build the frozen V7.8 baseline and the observable arrays required
+    by the frozen A5-v1 observed-print classifier.
 
-    Returned semantics:
-        geometry_t80:
-            historical V7.8 comparator using Telea in AMBIGUOUS
+    Frozen V7.8 semantics:
+        PRESERVE  -> exact observed byte
+        REMOVE    -> frozen paper estimate
+        AMBIGUOUS -> frozen Telea reconstruction
 
-        a1:
-            corrected operational baseline:
-            PRESERVE  -> observed
-            REMOVE    -> paper
-            AMBIGUOUS -> observed
+    Frozen A5-v1 candidate population:
+        inside the authoritative dilation-2 mask
+        AND observed byte < 200
+        AND not already PRESERVE-routed by V7.8
 
-        eligible:
-            proper operational A5 population, AMBIGUOUS only
+    Frozen A5-v1 fallback:
+        geometry_t80 at every non-PRINT coordinate
     """
 
     observed = require_grayscale_uint8(
@@ -922,7 +918,9 @@ def build_v78(
         "observed",
     )
 
-    seed = binary(reviewed_seed)
+    seed = binary(
+        reviewed_seed
+    )
 
     require_same_shape(
         observed,
@@ -940,16 +938,10 @@ def build_v78(
         mask,
     )
 
-    historical_geometry_t80, routes = geometry_t80(
+    frozen_v78, routes = geometry_t80(
         observed,
         mask,
         telea,
-    )
-
-    a1 = assemble_operational_a1(
-        observed,
-        mask,
-        routes,
     )
 
     channels = build_channels(
@@ -958,35 +950,168 @@ def build_v78(
         routes,
     )
 
-    # Proper operational A5 is permitted to inspect AMBIGUOUS only.
-    # Any optional dark-pixel restriction belongs in the frozen A5
-    # policy/bundle and must not silently broaden this population.
-    eligible = routes["ambiguous"].copy()
+    active = mask > 0
 
-    if np.any(
-        eligible
-        & ~routes["ambiguous"]
-    ):
-        raise RuntimeError(
-            "A5 eligibility includes non-AMBIGUOUS pixels"
-        )
+    preserve = np.asarray(
+        routes["preserve"],
+        dtype=bool,
+    )
+    remove = np.asarray(
+        routes["remove"],
+        dtype=bool,
+    )
+    ambiguous = np.asarray(
+        routes["ambiguous"],
+        dtype=bool,
+    )
 
-    if np.any(
-        eligible
-        & ~(mask > 0)
-    ):
-        raise RuntimeError(
-            "A5 eligibility escapes the prepared mask"
-        )
-
-    ys, xs = np.where(eligible)
+    routed = (
+        preserve
+        | remove
+        | ambiguous
+    )
 
     if not np.array_equal(
-        a1[mask == 0],
-        observed[mask == 0],
+        routed,
+        active,
+    ):
+        missing = int(
+            np.sum(
+                active
+                & ~routed
+            )
+        )
+        escaped = int(
+            np.sum(
+                routed
+                & ~active
+            )
+        )
+
+        raise RuntimeError(
+            "Frozen V7.8 routes do not exactly partition "
+            "the prepared mask: "
+            f"missing={missing}, outside={escaped}"
+        )
+
+    if np.any(
+        preserve
+        & remove
     ):
         raise RuntimeError(
-            "Operational A1 outside-mask drift"
+            "PRESERVE and REMOVE routes overlap"
+        )
+
+    if np.any(
+        preserve
+        & ambiguous
+    ):
+        raise RuntimeError(
+            "PRESERVE and AMBIGUOUS routes overlap"
+        )
+
+    if np.any(
+        remove
+        & ambiguous
+    ):
+        raise RuntimeError(
+            "REMOVE and AMBIGUOUS routes overlap"
+        )
+
+    eligible_a5_v1 = (
+        active
+        & (observed < 200)
+        & ~preserve
+    )
+
+    if np.any(
+        eligible_a5_v1
+        & ~active
+    ):
+        raise RuntimeError(
+            "A5-v1 eligibility escapes the "
+            "authoritative mask"
+        )
+
+    if np.any(
+        eligible_a5_v1
+        & preserve
+    ):
+        raise RuntimeError(
+            "A5-v1 eligibility includes "
+            "PRESERVE-routed pixels"
+        )
+
+    if np.any(
+        eligible_a5_v1
+        & (observed >= 200)
+    ):
+        raise RuntimeError(
+            "A5-v1 eligibility includes "
+            "non-dark pixels"
+        )
+
+    expected_eligible = (
+        (
+            remove
+            | ambiguous
+        )
+        & (observed < 200)
+    )
+
+    if not np.array_equal(
+        eligible_a5_v1,
+        expected_eligible,
+    ):
+        raise RuntimeError(
+            "A5-v1 eligibility does not equal dark "
+            "REMOVE-or-AMBIGUOUS pixels"
+        )
+
+    ys, xs = np.where(
+        eligible_a5_v1
+    )
+
+    ys = ys.astype(
+        np.int64
+    )
+    xs = xs.astype(
+        np.int64
+    )
+
+    if not np.array_equal(
+        frozen_v78[~active],
+        observed[~active],
+    ):
+        raise RuntimeError(
+            "Frozen V7.8 outside-mask drift"
+        )
+
+    if np.any(
+        frozen_v78[preserve]
+        != observed[preserve]
+    ):
+        raise RuntimeError(
+            "Frozen V7.8 PRESERVE output differs "
+            "from observed"
+        )
+
+    if np.any(
+        frozen_v78[remove]
+        != routes["paper"][remove]
+    ):
+        raise RuntimeError(
+            "Frozen V7.8 REMOVE output differs "
+            "from paper"
+        )
+
+    if np.any(
+        frozen_v78[ambiguous]
+        != telea[ambiguous]
+    ):
+        raise RuntimeError(
+            "Frozen V7.8 AMBIGUOUS output differs "
+            "from Telea"
         )
 
     return {
@@ -997,15 +1122,16 @@ def build_v78(
         "mask": mask,
         "prepared_mask": mask,
 
-        # Comparator/diagnostic only.
+        # Frozen reconstruction arrays.
         "telea": telea,
-        "geometry_t80": historical_geometry_t80,
-        "historical_geometry_t80": (
-            historical_geometry_t80
-        ),
+        "geometry_t80": frozen_v78,
+        "historical_geometry_t80": frozen_v78,
 
-        # Corrected operational baseline.
-        "a1": a1,
+        # A5-v1 fallback baseline. This alias is included only
+        # for callers that still use the generic name "a1".
+        "a1": frozen_v78,
+        "baseline": frozen_v78,
+        "v7_8": frozen_v78,
 
         # Frozen route, support, paper and normalisation arrays.
         "routes": routes,
@@ -1015,11 +1141,22 @@ def build_v78(
         # Ordered observable representation.
         "channels": channels,
 
-        # Proper safe-cleanup A5 population.
-        "eligible": eligible,
-        "eligible_a5": eligible,
+        # Frozen A5-v1 candidate population.
+        "eligible": eligible_a5_v1,
+        "eligible_a5": eligible_a5_v1,
+        "eligible_a5_v1": eligible_a5_v1,
 
-        # Page coordinates in deterministic NumPy order.
-        "ys": ys.astype(np.int64),
-        "xs": xs.astype(np.int64),
+        # Optional explicit route populations for diagnostics.
+        "eligible_remove": (
+            eligible_a5_v1
+            & remove
+        ),
+        "eligible_ambiguous": (
+            eligible_a5_v1
+            & ambiguous
+        ),
+
+        # Candidate coordinates in deterministic NumPy order.
+        "ys": ys,
+        "xs": xs,
     }

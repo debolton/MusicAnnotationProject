@@ -1,36 +1,5 @@
-"""
-Frozen operational A5 safe-cleanup runtime.
-
-EXPECTED BUNDLE LAYOUT
-----------------------
-a5_safe_cleanup/
-    inference_runtime.py
-    model.pt
-    isotonic_calibrator.joblib
-    policy.json
-    channel_schema.json
-    model_config.json
-
-EXPECTED SEMANTICS
-------------------
-Input population:
-    AMBIGUOUS pixels only.
-
-Model positive class:
-    CLEAN.
-
-Operational action:
-    CLEAN     -> copy paper estimate.
-    KEEP      -> retain exact A1.
-    UNCERTAIN -> retain exact A1.
-
-This runtime deliberately rejects an observed-PRINT bundle. Do not place this
-file inside frozen/a5_v1 or edit the Notebook 91 frozen bundle in place.
-"""
-
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -58,9 +27,36 @@ EXPECTED_CHANNELS = [
 
 EXPECTED_PATCH_SIZE = 33
 
+EXPECTED_POLICY = {
+    "annotation_action": "KEEP_A1_BYTE",
+    "annotation_threshold": 0.995,
+    "clean_image_permitted_at_runtime": False,
+    "connectivity": 8,
+    "development_policy_selected_post_outcome": True,
+    "effective_print_threshold": 0.980,
+    "fallback": "A1",
+    "independent_validation_completed": False,
+    "minimum_print_run": 2,
+    "outside_authoritative_mask": "IMMUTABLE_OBSERVED",
+    "policy_id": "A5-v1-print-p0980-margin0960-run2",
+    "print_action": "COPY_EXACT_OBSERVED_BYTE",
+    "print_margin": 0.960,
+    "print_threshold": 0.980,
+    "production_authorised": False,
+    "raw_page_coordinates_as_model_inputs": False,
+    "runtime_truth_permitted": False,
+    "status": "FROZEN_CANDIDATE_FOR_INDEPENDENT_TEST",
+    "truth_codes": {
+        "0": "ANNOTATION",
+        "1": "PRINT",
+        "2": "UNCERTAIN",
+    },
+    "uncertain_action": "KEEP_A1_BYTE",
+}
+
 ALLOWED_DECISIONS = {
-    "CLEAN",
-    "KEEP",
+    "ANNOTATION",
+    "PRINT",
     "UNCERTAIN",
 }
 
@@ -111,21 +107,7 @@ class TopologyCNN(nn.Module):
         )
 
 
-def sha256_file(path: Path | str) -> str:
-    path = Path(path)
-    digest = hashlib.sha256()
-
-    with path.open("rb") as handle:
-        for block in iter(
-            lambda: handle.read(1024 * 1024),
-            b"",
-        ):
-            digest.update(block)
-
-    return digest.hexdigest()
-
-
-def require_file(
+def _require_file(
     bundle: Path,
     filename: str,
 ) -> Path:
@@ -133,21 +115,23 @@ def require_file(
 
     if not path.is_file():
         raise RuntimeError(
-            f"Missing safe-cleanup bundle file: {path}"
+            f"Missing frozen A5-v1 bundle file: {path}"
         )
 
     return path
 
 
-def load_json(
+def _load_json(
     path: Path,
     name: str,
 ) -> dict:
     try:
-        value = json.loads(path.read_text())
+        value = json.loads(
+            path.read_text()
+        )
     except Exception as exc:
         raise RuntimeError(
-            f"Unable to read {name}: {path}: {exc}"
+            f"Unable to read {name} from {path}: {exc}"
         ) from exc
 
     if not isinstance(value, dict):
@@ -158,244 +142,105 @@ def load_json(
     return value
 
 
-def require_uint8_image(
-    value: np.ndarray,
+def _assert_float_equal(
     name: str,
-    expected_shape: tuple[int, int] | None = None,
-) -> np.ndarray:
-    value = np.asarray(value)
-
-    if value.ndim != 2:
-        raise RuntimeError(
-            f"{name} must be two-dimensional; "
-            f"found shape {value.shape}"
-        )
-
-    if expected_shape is not None and value.shape != expected_shape:
-        raise RuntimeError(
-            f"{name} shape mismatch: "
-            f"expected {expected_shape}, found {value.shape}"
-        )
-
-    if not np.issubdtype(
-        value.dtype,
-        np.number,
-    ):
-        raise RuntimeError(
-            f"{name} must contain numeric values"
-        )
-
-    if not np.isfinite(value).all():
-        raise RuntimeError(
-            f"{name} contains non-finite values"
-        )
-
-    if value.size:
-        if value.min() < 0 or value.max() > 255:
-            raise RuntimeError(
-                f"{name} contains values outside 0..255"
-            )
-
-    return np.ascontiguousarray(
-        value.astype(np.uint8)
-    )
-
-
-def require_bool_mask(
-    value: np.ndarray,
-    name: str,
-    expected_shape: tuple[int, int],
-) -> np.ndarray:
-    value = np.asarray(value)
-
-    if value.ndim != 2:
-        raise RuntimeError(
-            f"{name} must be two-dimensional; "
-            f"found shape {value.shape}"
-        )
-
-    if value.shape != expected_shape:
-        raise RuntimeError(
-            f"{name} shape mismatch: "
-            f"expected {expected_shape}, found {value.shape}"
-        )
-
-    if (
-        np.issubdtype(value.dtype, np.number)
-        and not np.isfinite(value).all()
-    ):
-        raise RuntimeError(
-            f"{name} contains non-finite values"
-        )
-
-    return np.ascontiguousarray(
-        value.astype(bool)
-    )
-
-
-def verify_declared_hash(
-    policy: dict,
-    key: str,
-    path: Path,
+    actual: Any,
+    expected: float,
 ) -> None:
-    expected = policy.get(key)
-
-    if expected in {
-        None,
-        "",
-    }:
-        return
-
-    actual = sha256_file(path)
-
-    if actual.lower() != str(expected).lower():
+    try:
+        actual_float = float(actual)
+    except (TypeError, ValueError) as exc:
         raise RuntimeError(
-            f"Bundle hash mismatch for {path.name}: "
-            f"{actual} != {expected}"
+            f"Frozen policy field {name!r} is not numeric: "
+            f"{actual!r}"
+        ) from exc
+
+    if actual_float != float(expected):
+        raise RuntimeError(
+            f"Frozen policy mismatch for {name}: "
+            f"{actual_float!r} != {expected!r}"
         )
 
 
-def assert_policy_contract(
+def _assert_policy_contract(
     policy: dict,
 ) -> None:
-    policy_id = policy.get("policy_id")
-
-    if not policy_id:
-        raise RuntimeError(
-            "Safe-cleanup policy has no policy_id"
-        )
-
-    probability_semantics = str(
-        policy.get(
-            "probability_semantics",
-            policy.get("positive_class", ""),
-        )
-    ).upper()
-
-    if probability_semantics != "CLEAN":
-        raise RuntimeError(
-            "This runtime requires a genuine CLEAN model. "
-            f"Bundle declares {probability_semantics!r}. "
-            "Do not load the Notebook 91 observed-PRINT bundle."
-        )
-
-    positive_class = str(
-        policy.get(
-            "positive_class",
-            "CLEAN",
-        )
-    ).upper()
-
-    if positive_class != "CLEAN":
-        raise RuntimeError(
-            "Safe-cleanup positive_class must be CLEAN; "
-            f"found {positive_class!r}"
-        )
-
-    eligible_route = str(
-        policy.get(
-            "eligible_route",
-            "",
-        )
-    ).upper()
-
-    if eligible_route != "AMBIGUOUS":
-        raise RuntimeError(
-            "Safe-cleanup eligible_route must be AMBIGUOUS; "
-            f"found {eligible_route!r}"
-        )
-
-    clean_action = str(
-        policy.get(
-            "clean_action",
-            "",
-        )
-    ).upper()
-
-    if clean_action not in {
-        "PAPER",
-        "COPY_PAPER",
-        "COPY_PAPER_ESTIMATE",
-    }:
-        raise RuntimeError(
-            "Safe-cleanup clean_action must copy the paper "
-            f"estimate; found {clean_action!r}"
-        )
-
-    default_action = str(
-        policy.get(
-            "default_action",
-            policy.get(
-                "non_clean_action",
-                "",
-            ),
-        )
-    ).upper()
-
-    if default_action not in {
-        "A1",
-        "KEEP_A1",
-        "COPY_A1",
-    }:
-        raise RuntimeError(
-            "Safe-cleanup default action must retain A1; "
-            f"found {default_action!r}"
-        )
-
-    clean_threshold = policy.get(
-        "clean_threshold"
+    missing = sorted(
+        set(EXPECTED_POLICY)
+        - set(policy)
     )
 
-    if clean_threshold is None:
+    if missing:
         raise RuntimeError(
-            "Safe-cleanup policy has no clean_threshold"
+            "Frozen A5-v1 policy is missing fields: "
+            f"{missing}"
         )
 
-    clean_threshold = float(clean_threshold)
+    for key, expected in EXPECTED_POLICY.items():
+        actual = policy[key]
 
-    if not 0.0 <= clean_threshold <= 1.0:
-        raise RuntimeError(
-            "clean_threshold must be within 0..1"
-        )
+        if isinstance(expected, float):
+            _assert_float_equal(
+                key,
+                actual,
+                expected,
+            )
+            continue
 
-    keep_threshold = policy.get(
-        "keep_threshold"
-    )
-
-    if keep_threshold is not None:
-        keep_threshold = float(keep_threshold)
-
-        if not 0.0 <= keep_threshold <= 1.0:
+        if actual != expected:
             raise RuntimeError(
-                "keep_threshold must be within 0..1"
+                f"Frozen policy mismatch for {key}: "
+                f"{actual!r} != {expected!r}"
             )
 
-        if keep_threshold >= clean_threshold:
-            raise RuntimeError(
-                "keep_threshold must be lower than "
-                "clean_threshold"
-            )
-
-    minimum_clean_run = int(
-        policy.get(
-            "minimum_clean_run",
-            1,
-        )
+    print_threshold = float(
+        policy["print_threshold"]
+    )
+    print_margin = float(
+        policy["print_margin"]
+    )
+    effective_threshold = max(
+        print_threshold,
+        (1.0 + print_margin) / 2.0,
     )
 
-    if minimum_clean_run < 1:
+    if effective_threshold != float(
+        policy["effective_print_threshold"]
+    ):
         raise RuntimeError(
-            "minimum_clean_run must be at least 1"
+            "Frozen effective PRINT threshold is inconsistent: "
+            f"calculated {effective_threshold!r}, "
+            f"recorded "
+            f"{policy['effective_print_threshold']!r}"
         )
 
-    connectivity = int(
-        policy.get(
-            "connectivity",
-            8,
+    if not 0.0 <= float(
+        policy["annotation_threshold"]
+    ) <= 1.0:
+        raise RuntimeError(
+            "annotation_threshold must be within 0..1"
         )
-    )
 
-    if connectivity not in {
+    if not 0.0 <= print_threshold <= 1.0:
+        raise RuntimeError(
+            "print_threshold must be within 0..1"
+        )
+
+    if not 0.0 <= print_margin <= 1.0:
+        raise RuntimeError(
+            "print_margin must be within 0..1"
+        )
+
+    if int(
+        policy["minimum_print_run"]
+    ) < 1:
+        raise RuntimeError(
+            "minimum_print_run must be at least 1"
+        )
+
+    if int(
+        policy["connectivity"]
+    ) not in {
         4,
         8,
     }:
@@ -403,40 +248,8 @@ def assert_policy_contract(
             "connectivity must be 4 or 8"
         )
 
-    truth_codes = policy.get(
-        "truth_codes",
-        {},
-    )
 
-    if truth_codes:
-        if not isinstance(truth_codes, dict):
-            raise RuntimeError(
-                "truth_codes must be a dictionary"
-            )
-
-        classes = {
-            str(value).upper()
-            for value in truth_codes.values()
-        }
-
-        unexpected = (
-            classes
-            - ALLOWED_DECISIONS
-        )
-
-        if unexpected:
-            raise RuntimeError(
-                "Unexpected safe-cleanup classes: "
-                f"{sorted(unexpected)}"
-            )
-
-        if "CLEAN" not in classes:
-            raise RuntimeError(
-                "truth_codes contains no CLEAN class"
-            )
-
-
-def assert_schema_contract(
+def _assert_schema_contract(
     schema: dict,
     config: dict,
 ) -> None:
@@ -444,8 +257,9 @@ def assert_schema_contract(
 
     if channels != EXPECTED_CHANNELS:
         raise RuntimeError(
-            "Safe-cleanup channel order mismatch: "
-            f"{channels}"
+            "A5-v1 channel order differs from the frozen "
+            "11-channel contract: "
+            f"{channels!r}"
         )
 
     patch = schema.get(
@@ -453,25 +267,34 @@ def assert_schema_contract(
         schema.get("patch_size"),
     )
 
-    if int(patch if patch is not None else -1) != (
-        EXPECTED_PATCH_SIZE
+    if patch is None:
+        raise RuntimeError(
+            "A5-v1 channel schema has no patch size"
+        )
+
+    if int(patch) != EXPECTED_PATCH_SIZE:
+        raise RuntimeError(
+            "A5-v1 patch size differs from the frozen "
+            f"{EXPECTED_PATCH_SIZE}x{EXPECTED_PATCH_SIZE} "
+            f"contract: {patch!r}"
+        )
+
+    if int(patch) % 2 != 1:
+        raise RuntimeError(
+            "A5-v1 patch size must be odd"
+        )
+
+    padding = schema.get(
+        "padding"
+    )
+
+    if (
+        padding is not None
+        and str(padding).lower() != "reflect"
     ):
         raise RuntimeError(
-            "Safe-cleanup patch size mismatch: "
-            f"{patch}"
-        )
-
-    padding = str(
-        schema.get(
-            "padding",
-            "reflect",
-        )
-    ).lower()
-
-    if padding != "reflect":
-        raise RuntimeError(
-            "Safe-cleanup padding must be reflect; "
-            f"found {padding!r}"
+            "A5-v1 padding differs from the frozen reflect "
+            f"contract: {padding!r}"
         )
 
     configured_channels = config.get(
@@ -503,20 +326,20 @@ def assert_schema_contract(
         )
 
 
-def extract_state_dict(
-    loaded: Any,
+def _extract_state_dict(
+    checkpoint: Any,
 ) -> dict:
-    if isinstance(loaded, dict):
-        if "state_dict" in loaded:
-            state = loaded["state_dict"]
-        elif "model_state_dict" in loaded:
-            state = loaded["model_state_dict"]
-        else:
-            state = loaded
-    else:
+    if not isinstance(checkpoint, dict):
         raise RuntimeError(
-            "model.pt did not contain a state dictionary"
+            "model.pt does not contain a state dictionary"
         )
+
+    if "state_dict" in checkpoint:
+        state = checkpoint["state_dict"]
+    elif "model_state_dict" in checkpoint:
+        state = checkpoint["model_state_dict"]
+    else:
+        state = checkpoint
 
     if not isinstance(state, dict):
         raise RuntimeError(
@@ -543,68 +366,47 @@ def load_bundle(
 
     if not bundle.is_dir():
         raise RuntimeError(
-            f"Safe-cleanup bundle does not exist: {bundle}"
+            f"Frozen A5-v1 bundle does not exist: {bundle}"
         )
 
-    policy_path = require_file(
+    policy_path = _require_file(
         bundle,
         "policy.json",
     )
-    schema_path = require_file(
+    schema_path = _require_file(
         bundle,
         "channel_schema.json",
     )
-    config_path = require_file(
+    config_path = _require_file(
         bundle,
         "model_config.json",
     )
-    model_path = require_file(
+    model_path = _require_file(
         bundle,
         "model.pt",
     )
-    calibrator_path = require_file(
+    calibrator_path = _require_file(
         bundle,
         "isotonic_calibrator.joblib",
     )
 
-    policy = load_json(
+    policy = _load_json(
         policy_path,
-        "policy",
+        "frozen policy",
     )
-    schema = load_json(
+    schema = _load_json(
         schema_path,
         "channel schema",
     )
-    config = load_json(
+    config = _load_json(
         config_path,
-        "model config",
+        "model configuration",
     )
 
-    assert_policy_contract(policy)
-    assert_schema_contract(
+    _assert_policy_contract(policy)
+    _assert_schema_contract(
         schema,
         config,
-    )
-
-    verify_declared_hash(
-        policy,
-        "model_sha256",
-        model_path,
-    )
-    verify_declared_hash(
-        policy,
-        "calibrator_sha256",
-        calibrator_path,
-    )
-    verify_declared_hash(
-        policy,
-        "schema_sha256",
-        schema_path,
-    )
-    verify_declared_hash(
-        policy,
-        "model_config_sha256",
-        config_path,
     )
 
     selected_device = device or (
@@ -614,7 +416,7 @@ def load_bundle(
     )
 
     if (
-        selected_device.startswith("cuda")
+        str(selected_device).startswith("cuda")
         and not torch.cuda.is_available()
     ):
         raise RuntimeError(
@@ -632,10 +434,12 @@ def load_bundle(
         )
     except Exception as exc:
         raise RuntimeError(
-            f"Unable to load safe-cleanup model: {exc}"
+            f"Unable to load frozen A5-v1 model: {exc}"
         ) from exc
 
-    state = extract_state_dict(checkpoint)
+    state = _extract_state_dict(
+        checkpoint
+    )
 
     try:
         model.load_state_dict(
@@ -644,7 +448,7 @@ def load_bundle(
         )
     except Exception as exc:
         raise RuntimeError(
-            "Safe-cleanup checkpoint does not match "
+            "Frozen A5-v1 checkpoint does not match "
             f"TopologyCNN exactly: {exc}"
         ) from exc
 
@@ -656,7 +460,7 @@ def load_bundle(
         )
     except Exception as exc:
         raise RuntimeError(
-            f"Unable to load safe-cleanup calibrator: {exc}"
+            f"Unable to load frozen A5-v1 calibrator: {exc}"
         ) from exc
 
     if not callable(
@@ -667,7 +471,7 @@ def load_bundle(
         )
     ):
         raise RuntimeError(
-            "Safe-cleanup calibrator has no predict() method"
+            "Frozen A5-v1 calibrator has no predict() method"
         )
 
     return (
@@ -685,17 +489,17 @@ def make_padded(
 ) -> dict:
     if not isinstance(channels, dict):
         raise RuntimeError(
-            "channels must be a dictionary"
+            "A5-v1 channels must be a dictionary"
         )
 
-    expected_channels = schema.get(
+    channel_order = schema.get(
         "channels"
     )
 
-    if expected_channels != EXPECTED_CHANNELS:
+    if channel_order != EXPECTED_CHANNELS:
         raise RuntimeError(
-            "Runtime channel schema is not the expected "
-            "ordered contract"
+            "Runtime channel order differs from the frozen "
+            "A5-v1 schema"
         )
 
     patch = int(
@@ -707,22 +511,17 @@ def make_padded(
 
     if patch != EXPECTED_PATCH_SIZE:
         raise RuntimeError(
-            f"Unexpected patch size: {patch}"
-        )
-
-    if patch % 2 != 1:
-        raise RuntimeError(
-            "Patch size must be odd"
+            f"Unexpected A5-v1 patch size: {patch}"
         )
 
     half = patch // 2
-    output: dict[str, np.ndarray] = {}
+    output = {}
     shapes = set()
 
-    for name in expected_channels:
+    for name in channel_order:
         if name not in channels:
             raise RuntimeError(
-                f"Missing channel: {name}"
+                f"Missing A5-v1 channel: {name}"
             )
 
         array = np.asarray(
@@ -755,8 +554,8 @@ def make_padded(
             "norm",
         }:
             if value.size and (
-                value.min() < 0
-                or value.max() > 255
+                value.min() < 0.0
+                or value.max() > 255.0
             ):
                 raise RuntimeError(
                     f"{name}: expected values within 0..255 "
@@ -773,7 +572,7 @@ def make_padded(
 
     if len(shapes) != 1:
         raise RuntimeError(
-            f"Channel shape mismatch: {sorted(shapes)}"
+            f"A5-v1 channel shape mismatch: {sorted(shapes)}"
         )
 
     return output
@@ -813,25 +612,55 @@ def score_coordinates(
             "Y/X coordinate length mismatch"
         )
 
-    patch = int(
-        schema.get(
-            "patch",
-            schema.get("patch_size", -1),
-        )
-    )
-
-    channels = schema["channels"]
-
     if len(ys) == 0:
         return np.empty(
             0,
             dtype=np.float64,
         )
 
-    first_shape = padded[channels[0]].shape
+    channels = schema["channels"]
+    patch = int(
+        schema.get(
+            "patch",
+            schema.get("patch_size", -1),
+        )
+    )
     half = patch // 2
-    image_height = first_shape[0] - 2 * half
-    image_width = first_shape[1] - 2 * half
+
+    missing = [
+        name
+        for name in channels
+        if name not in padded
+    ]
+
+    if missing:
+        raise RuntimeError(
+            f"Padded channel set is incomplete: {missing}"
+        )
+
+    padded_shapes = {
+        np.asarray(padded[name]).shape
+        for name in channels
+    }
+
+    if len(padded_shapes) != 1:
+        raise RuntimeError(
+            "Padded A5-v1 channel shapes differ: "
+            f"{sorted(padded_shapes)}"
+        )
+
+    padded_height, padded_width = next(
+        iter(padded_shapes)
+    )
+
+    image_height = (
+        padded_height
+        - 2 * half
+    )
+    image_width = (
+        padded_width
+        - 2 * half
+    )
 
     if (
         np.any(ys < 0)
@@ -840,10 +669,10 @@ def score_coordinates(
         or np.any(xs >= image_width)
     ):
         raise RuntimeError(
-            "Scoring coordinate lies outside the image"
+            "A5-v1 scoring coordinate lies outside the image"
         )
 
-    raw_parts: list[np.ndarray] = []
+    raw_parts = []
 
     model.eval()
 
@@ -868,7 +697,7 @@ def score_coordinates(
                 dtype=np.float32,
             )
 
-            for local_index, (
+            for row_index, (
                 y,
                 x,
             ) in enumerate(
@@ -877,12 +706,15 @@ def score_coordinates(
                     xs[start:stop],
                 )
             ):
+                y = int(y)
+                x = int(x)
+
                 for channel_index, name in enumerate(
                     channels
                 ):
                     candidate = padded[name][
-                        int(y):int(y) + patch,
-                        int(x):int(x) + patch,
+                        y:y + patch,
+                        x:x + patch,
                     ]
 
                     if candidate.shape != (
@@ -891,12 +723,11 @@ def score_coordinates(
                     ):
                         raise RuntimeError(
                             f"Patch extraction failed for {name} "
-                            f"at ({int(y)}, {int(x)}): "
-                            f"{candidate.shape}"
+                            f"at ({y}, {x}): {candidate.shape}"
                         )
 
                     tensors[
-                        local_index,
+                        row_index,
                         channel_index,
                     ] = candidate
 
@@ -904,15 +735,20 @@ def score_coordinates(
                 tensors
             ).to(device)
 
-            logits = model(tensor_batch)
+            logits = model(
+                tensor_batch
+            )
 
-            if logits.ndim != 2 or logits.shape[1] != 2:
+            if (
+                logits.ndim != 2
+                or logits.shape[1] != 2
+            ):
                 raise RuntimeError(
-                    "Safe-cleanup model must produce two logits "
-                    f"per candidate; found {tuple(logits.shape)}"
+                    "A5-v1 model must produce two logits per "
+                    f"candidate; found {tuple(logits.shape)}"
                 )
 
-            raw_clean = (
+            raw_print = (
                 torch.softmax(
                     logits,
                     dim=1,
@@ -923,7 +759,9 @@ def score_coordinates(
                 .astype(np.float64)
             )
 
-            raw_parts.append(raw_clean)
+            raw_parts.append(
+                raw_print
+            )
 
     raw_probability = np.concatenate(
         raw_parts
@@ -933,14 +771,14 @@ def score_coordinates(
         len(ys),
     ):
         raise RuntimeError(
-            "Raw CLEAN probability length mismatch"
+            "Raw PRINT probability length mismatch"
         )
 
     if not np.isfinite(
         raw_probability
     ).all():
         raise RuntimeError(
-            "Raw CLEAN probability contains non-finite values"
+            "Raw PRINT probability contains non-finite values"
         )
 
     try:
@@ -949,7 +787,7 @@ def score_coordinates(
         )
     except Exception as exc:
         raise RuntimeError(
-            f"CLEAN calibration failed: {exc}"
+            f"A5-v1 PRINT calibration failed: {exc}"
         ) from exc
 
     calibrated = np.asarray(
@@ -961,14 +799,14 @@ def score_coordinates(
         len(ys),
     ):
         raise RuntimeError(
-            "Calibrated CLEAN probability length mismatch"
+            "Calibrated PRINT probability length mismatch"
         )
 
     if not np.isfinite(
         calibrated
     ).all():
         raise RuntimeError(
-            "Calibrated CLEAN probability contains "
+            "Calibrated PRINT probability contains "
             "non-finite values"
         )
 
@@ -979,7 +817,7 @@ def score_coordinates(
         or np.any(calibrated > 1.0 + tolerance)
     ):
         raise RuntimeError(
-            "Calibrated CLEAN probability lies outside 0..1"
+            "Calibrated PRINT probability lies outside 0..1"
         )
 
     return np.clip(
@@ -989,71 +827,6 @@ def score_coordinates(
     )
 
 
-def map_truth_codes(
-    values: np.ndarray,
-    policy: dict,
-) -> np.ndarray:
-    values = np.asarray(values)
-
-    truth_codes = policy.get(
-        "truth_codes",
-        {},
-    )
-
-    if (
-        truth_codes
-        and np.issubdtype(
-            values.dtype,
-            np.number,
-        )
-    ):
-        mapping = {
-            int(key): str(value).upper()
-            for key, value
-            in truth_codes.items()
-        }
-
-        integer_values = values.astype(
-            np.int64
-        )
-
-        unknown = (
-            set(integer_values.tolist())
-            - set(mapping)
-        )
-
-        if unknown:
-            raise RuntimeError(
-                "Decision output contains unknown numeric "
-                f"codes: {sorted(unknown)}"
-            )
-
-        result = np.asarray(
-            [
-                mapping[int(value)]
-                for value in integer_values
-            ],
-            dtype=object,
-        )
-    else:
-        result = np.char.upper(
-            values.astype(str)
-        ).astype(object)
-
-    unexpected = (
-        set(result.tolist())
-        - ALLOWED_DECISIONS
-    )
-
-    if unexpected:
-        raise RuntimeError(
-            "Decision output contains unexpected classes: "
-            f"{sorted(unexpected)}"
-        )
-
-    return result
-
-
 def decisions(
     probability: np.ndarray,
     policy: dict,
@@ -1061,6 +834,10 @@ def decisions(
     ys: np.ndarray,
     xs: np.ndarray,
 ):
+    _assert_policy_contract(
+        policy
+    )
+
     probability = np.asarray(
         probability,
         dtype=np.float64,
@@ -1076,7 +853,7 @@ def decisions(
 
     if probability.ndim != 1:
         raise RuntimeError(
-            "Probability must be one-dimensional"
+            "PRINT probability must be one-dimensional"
         )
 
     if not (
@@ -1090,7 +867,7 @@ def decisions(
 
     if len(shape) != 2:
         raise RuntimeError(
-            "Page shape must have two dimensions"
+            "Page shape must contain two dimensions"
         )
 
     height = int(shape[0])
@@ -1108,22 +885,26 @@ def decisions(
         or np.any(xs >= width)
     ):
         raise RuntimeError(
-            "Decision coordinate lies outside the page"
+            "A5-v1 decision coordinate lies outside the page"
         )
 
-    if len(set(zip(
-        ys.tolist(),
-        xs.tolist(),
-    ))) != len(ys):
+    if len(
+        set(
+            zip(
+                ys.tolist(),
+                xs.tolist(),
+            )
+        )
+    ) != len(ys):
         raise RuntimeError(
-            "Duplicate decision coordinates supplied"
+            "Duplicate A5-v1 decision coordinates supplied"
         )
 
     if not np.isfinite(
         probability
     ).all():
         raise RuntimeError(
-            "CLEAN probability contains non-finite values"
+            "PRINT probability contains non-finite values"
         )
 
     if (
@@ -1131,122 +912,245 @@ def decisions(
         or np.any(probability > 1.0)
     ):
         raise RuntimeError(
-            "CLEAN probability lies outside 0..1"
+            "PRINT probability lies outside 0..1"
         )
 
-    clean_threshold = float(
-        policy["clean_threshold"]
-    )
-
-    keep_threshold_value = policy.get(
-        "keep_threshold"
+    p_print = probability
+    p_annotation = (
+        1.0
+        - p_print
     )
 
     provisional = np.full(
-        len(probability),
+        len(p_print),
         "UNCERTAIN",
         dtype=object,
     )
 
-    if keep_threshold_value is not None:
-        keep_threshold = float(
-            keep_threshold_value
+    annotation = (
+        p_annotation
+        >= float(
+            policy["annotation_threshold"]
         )
+    )
 
-        provisional[
-            probability <= keep_threshold
-        ] = "KEEP"
+    print_selected = (
+        (
+            p_print
+            >= float(
+                policy["print_threshold"]
+            )
+        )
+        & (
+            (
+                p_print
+                - p_annotation
+            )
+            >= float(
+                policy["print_margin"]
+            )
+        )
+    )
 
     provisional[
-        probability >= clean_threshold
-    ] = "CLEAN"
+        annotation
+    ] = "ANNOTATION"
 
-    provisional = map_truth_codes(
-        provisional,
-        policy,
-    )
+    provisional[
+        print_selected
+    ] = "PRINT"
+
+    if not set(
+        provisional.tolist()
+    ).issubset(
+        ALLOWED_DECISIONS
+    ):
+        raise RuntimeError(
+            "Unexpected provisional A5-v1 decision"
+        )
 
     final = provisional.copy()
 
-    minimum_clean_run = int(
-        policy.get(
-            "minimum_clean_run",
-            1,
-        )
+    minimum_run = int(
+        policy["minimum_print_run"]
     )
 
-    if minimum_clean_run > 1:
-        clean_indices = np.where(
-            provisional == "CLEAN"
+    if minimum_run > 1:
+        provisional_print_indices = np.where(
+            provisional == "PRINT"
         )[0]
 
-        clean_map = np.zeros(
+        print_map = np.zeros(
             (height, width),
             dtype=np.uint8,
         )
 
-        clean_map[
-            ys[clean_indices],
-            xs[clean_indices],
+        print_map[
+            ys[provisional_print_indices],
+            xs[provisional_print_indices],
         ] = 1
 
-        connectivity = int(
-            policy.get(
-                "connectivity",
-                8,
-            )
-        )
-
-        count, labels, stats, _ = (
+        component_count, labels, stats, _ = (
             cv2.connectedComponentsWithStats(
-                clean_map,
-                connectivity=connectivity,
+                print_map,
+                connectivity=int(
+                    policy["connectivity"]
+                ),
             )
         )
 
-        for component_id in range(
-            1,
-            count,
-        ):
-            component_area = int(
-                stats[
-                    component_id,
-                    cv2.CC_STAT_AREA,
-                ]
-            )
-
-            if component_area >= minimum_clean_run:
-                continue
-
-            selected_labels = labels[
-                ys[clean_indices],
-                xs[clean_indices],
+        if len(provisional_print_indices):
+            coordinate_labels = labels[
+                ys[provisional_print_indices],
+                xs[provisional_print_indices],
             ]
 
-            demote = (
-                selected_labels
-                == component_id
-            )
+            for component_id in range(
+                1,
+                component_count,
+            ):
+                component_area = int(
+                    stats[
+                       component_id,
+                        cv2.CC_STAT_AREA,
+                    ]
+                )
 
-            final[
-                clean_indices[demote]
-            ] = "UNCERTAIN"
+                if component_area >= minimum_run:
+                    continue
 
-    final = map_truth_codes(
-        final,
-        policy,
-    )
+                demote = (
+                    coordinate_labels
+                    == component_id
+                )
+
+                final[
+                    provisional_print_indices[
+                        demote
+                    ]
+                ] = "UNCERTAIN"
+
+    if not set(
+        final.tolist()
+    ).issubset(
+        ALLOWED_DECISIONS
+    ):
+        raise RuntimeError(
+            "Unexpected final A5-v1 decision"
+        )
+
+    if np.any(
+        (final == "PRINT")
+        & (provisional != "PRINT")
+    ):
+        raise RuntimeError(
+            "Run filtering created a new PRINT decision"
+        )
+
+    if np.any(
+        (provisional == "ANNOTATION")
+        & (final != "ANNOTATION")
+    ):
+        raise RuntimeError(
+            "Run filtering altered an ANNOTATION decision"
+        )
 
     return provisional, final
 
 
-def decision_mask(
-    shape: tuple[int, int],
+def assemble(
+    observed: np.ndarray,
+    a1: np.ndarray,
+    authoritative_mask: np.ndarray,
     ys: np.ndarray,
     xs: np.ndarray,
     final_decisions: np.ndarray,
-    positive_class: str = "CLEAN",
-) -> np.ndarray:
+):
+    observed = np.asarray(
+        observed
+    )
+    a1 = np.asarray(
+        a1
+    )
+    authoritative_mask = np.asarray(
+        authoritative_mask
+    )
+
+    if observed.ndim != 2:
+        raise RuntimeError(
+            f"Observed page must be 2-D; found {observed.shape}"
+        )
+
+    if a1.ndim != 2:
+        raise RuntimeError(
+            f"A1 page must be 2-D; found {a1.shape}"
+        )
+
+    if authoritative_mask.ndim != 2:
+        raise RuntimeError(
+            "Authoritative mask must be 2-D; "
+            f"found {authoritative_mask.shape}"
+        )
+
+    if not (
+        observed.shape
+        == a1.shape
+        == authoritative_mask.shape
+    ):
+        raise RuntimeError(
+            "Observed/A1/authoritative-mask shape mismatch"
+        )
+
+    if not np.issubdtype(
+        observed.dtype,
+        np.number,
+    ):
+        raise RuntimeError(
+            "Observed page must contain numeric values"
+        )
+
+    if not np.issubdtype(
+        a1.dtype,
+        np.number,
+    ):
+        raise RuntimeError(
+            "A1 page must contain numeric values"
+        )
+
+    if (
+        not np.isfinite(observed).all()
+        or not np.isfinite(a1).all()
+    ):
+        raise RuntimeError(
+            "Observed or A1 page contains non-finite values"
+        )
+
+    if observed.size and (
+        observed.min() < 0
+        or observed.max() > 255
+    ):
+        raise RuntimeError(
+            "Observed page contains values outside 0..255"
+        )
+
+    if a1.size and (
+        a1.min() < 0
+        or a1.max() > 255
+    ):
+        raise RuntimeError(
+            "A1 page contains values outside 0..255"
+        )
+
+    observed = np.ascontiguousarray(
+        observed.astype(np.uint8)
+    )
+    a1 = np.ascontiguousarray(
+        a1.astype(np.uint8)
+    )
+    mask = np.ascontiguousarray(
+        authoritative_mask.astype(bool)
+    )
+
     ys = np.asarray(
         ys,
         dtype=np.int64,
@@ -1266,231 +1170,150 @@ def decision_mask(
         == final_decisions.shape
     ):
         raise RuntimeError(
-            "Coordinate/decision length mismatch"
+            "Coordinate/final-decision length mismatch"
         )
 
-    selected = (
-        np.char.upper(
-            final_decisions.astype(str)
+    if ys.ndim != 1:
+        raise RuntimeError(
+            "Coordinates and decisions must be one-dimensional"
         )
-        == positive_class.upper()
+
+    height, width = observed.shape
+
+    if (
+        np.any(ys < 0)
+        or np.any(xs < 0)
+        or np.any(ys >= height)
+        or np.any(xs >= width)
+    ):
+        raise RuntimeError(
+            "A5-v1 assembly coordinate lies outside the page"
+        )
+
+    if len(
+        set(
+            zip(
+                ys.tolist(),
+                xs.tolist(),
+            )
+        )
+    ) != len(ys):
+        raise RuntimeError(
+            "Duplicate A5-v1 assembly coordinates supplied"
+        )
+
+    final_upper = np.char.upper(
+        final_decisions.astype(str)
+    ).astype(object)
+
+    unexpected = (
+        set(final_upper.tolist())
+        - ALLOWED_DECISIONS
     )
 
-    output = np.zeros(
-        shape,
+    if unexpected:
+        raise RuntimeError(
+            "Unexpected final A5-v1 decisions: "
+            f"{sorted(unexpected)}"
+        )
+
+    if len(ys) and np.any(
+        ~mask[ys, xs]
+    ):
+        raise RuntimeError(
+            "A5-v1 candidate coordinate escapes the "
+            "authoritative mask"
+        )
+
+    print_indices = np.where(
+        final_upper == "PRINT"
+    )[0]
+
+    print_y = ys[
+        print_indices
+    ]
+    print_x = xs[
+        print_indices
+    ]
+
+    print_mask = np.zeros(
+        observed.shape,
         dtype=bool,
     )
 
-    output[
-        ys[selected],
-        xs[selected],
+    print_mask[
+        print_y,
+        print_x,
     ] = True
-
-    return output
-
-
-def assemble_operational_a5(
-    observed: np.ndarray,
-    a1: np.ndarray,
-    paper: np.ndarray,
-    authoritative_mask: np.ndarray,
-    ambiguous: np.ndarray,
-    eligible: np.ndarray,
-    ys: np.ndarray,
-    xs: np.ndarray,
-    final_decisions: np.ndarray,
-):
-    observed = require_uint8_image(
-        observed,
-        "observed",
-    )
-    shape = observed.shape
-
-    a1 = require_uint8_image(
-        a1,
-        "a1",
-        shape,
-    )
-    paper = require_uint8_image(
-        paper,
-        "paper",
-        shape,
-    )
-
-    authority = require_bool_mask(
-        authoritative_mask,
-        "authoritative_mask",
-        shape,
-    )
-    ambiguous = require_bool_mask(
-        ambiguous,
-        "ambiguous",
-        shape,
-    )
-    eligible = require_bool_mask(
-        eligible,
-        "eligible",
-        shape,
-    )
-
-    ys = np.asarray(
-        ys,
-        dtype=np.int64,
-    )
-    xs = np.asarray(
-        xs,
-        dtype=np.int64,
-    )
-
-    if ys.shape != xs.shape:
-        raise RuntimeError(
-            "Y/X coordinate length mismatch"
-        )
-
-    if np.any(
-        ambiguous
-        & ~authority
-    ):
-        raise RuntimeError(
-            "AMBIGUOUS route escapes the authoritative mask"
-        )
-
-    if np.any(
-        eligible
-        & ~ambiguous
-    ):
-        raise RuntimeError(
-            "A5 eligibility includes non-AMBIGUOUS pixels"
-        )
-
-    if np.any(
-        eligible
-        & ~authority
-    ):
-        raise RuntimeError(
-            "A5 eligibility escapes the authoritative mask"
-        )
-
-    coordinate_mask = np.zeros(
-        shape,
-        dtype=bool,
-    )
-    coordinate_mask[
-        ys,
-        xs,
-    ] = True
-
-    if not np.array_equal(
-        coordinate_mask,
-        eligible,
-    ):
-        missing_coordinates = int(
-            np.sum(
-                eligible
-                & ~coordinate_mask
-            )
-        )
-
-        unexpected_coordinates = int(
-            np.sum(
-                coordinate_mask
-                & ~eligible
-            )
-        )
-
-        raise RuntimeError(
-            "A5 coordinates do not exactly represent the "
-            "eligible mask: "
-            f"missing={missing_coordinates}, "
-            f"unexpected={unexpected_coordinates}"
-        )
-
-    clean_mask = decision_mask(
-        shape=shape,
-        ys=ys,
-        xs=xs,
-        final_decisions=final_decisions,
-        positive_class="CLEAN",
-    )
-
-    if np.any(
-        clean_mask
-        & ~eligible
-    ):
-        raise RuntimeError(
-            "CLEAN decision escapes A5 eligibility"
-        )
-
-    if np.any(
-        clean_mask
-        & ~ambiguous
-    ):
-        raise RuntimeError(
-            "CLEAN decision includes non-AMBIGUOUS pixels"
-        )
-
-    if np.any(
-        clean_mask
-        & ~authority
-    ):
-        raise RuntimeError(
-            "CLEAN decision escapes the authoritative mask"
-        )
 
     output = a1.copy()
-    output[clean_mask] = paper[clean_mask]
+
+    # Frozen A5-v1 action:
+    # PRINT -> copy the exact observed byte.
+    output[
+        print_mask
+    ] = observed[
+        print_mask
+    ]
 
     if np.any(
-        output[clean_mask]
-        != paper[clean_mask]
+        print_mask
+        & ~mask
     ):
         raise RuntimeError(
-            "A5 CLEAN output does not equal the paper estimate"
+            "A5-v1 PRINT decision escapes the "
+            "authoritative mask"
         )
 
     if np.any(
-        output[~clean_mask]
-        != a1[~clean_mask]
+        output[~mask]
+        != observed[~mask]
     ):
         raise RuntimeError(
-            "A5 non-CLEAN output differs from A1"
+            "A5-v1 outside-authoritative-mask drift"
         )
 
     if np.any(
-        output[~ambiguous]
-        != a1[~ambiguous]
+        output[~print_mask]
+        != a1[~print_mask]
     ):
         raise RuntimeError(
-            "A5 changed a non-AMBIGUOUS pixel"
+            "A5-v1 non-PRINT A1 regression"
         )
 
     if np.any(
-        output[~authority]
-        != observed[~authority]
+        output[print_mask]
+        != observed[print_mask]
     ):
         raise RuntimeError(
-            "A5 changed a pixel outside the authoritative mask"
+            "A5-v1 PRINT output does not equal the exact "
+            "observed byte"
         )
 
-    changed = output != a1
+    changed = (
+        output
+        != a1
+    )
 
     expected_changed = (
-        clean_mask
-        & (paper != a1)
+        print_mask
+        & (
+            observed
+            != a1
+        )
     )
 
     if not np.array_equal(
         changed,
         expected_changed,
     ):
-        unexpected = int(
+        unexpected_changes = int(
             np.sum(
                 changed
                 & ~expected_changed
             )
         )
-
-        missing = int(
+        missing_changes = int(
             np.sum(
                 expected_changed
                 & ~changed
@@ -1498,40 +1321,21 @@ def assemble_operational_a5(
         )
 
         raise RuntimeError(
-            "A5 page delta does not equal effective "
-            "CLEAN-to-paper changes: "
-            f"unexpected={unexpected}, missing={missing}"
+            "A5-v1 page delta does not equal effective "
+            "PRINT restoration: "
+            f"unexpected={unexpected_changes}, "
+            f"missing={missing_changes}"
         )
 
-    return output, clean_mask
+    if np.any(
+        changed
+        & (
+            output
+            != observed
+        )
+    ):
+        raise RuntimeError(
+            "A5-v1 changed byte does not equal observed"
+        )
 
-
-def assemble(
-    observed: np.ndarray,
-    a1: np.ndarray,
-    paper: np.ndarray,
-    authoritative_mask: np.ndarray,
-    ambiguous: np.ndarray,
-    eligible: np.ndarray,
-    ys: np.ndarray,
-    xs: np.ndarray,
-    final_decisions: np.ndarray,
-):
-    """
-    Compatibility entry point for an operator expecting runtime.assemble().
-
-    This function intentionally uses CLEAN-to-paper semantics. It is not
-    compatible with the historical observed-PRINT call signature.
-    """
-
-    return assemble_operational_a5(
-        observed=observed,
-        a1=a1,
-        paper=paper,
-        authoritative_mask=authoritative_mask,
-        ambiguous=ambiguous,
-        eligible=eligible,
-        ys=ys,
-        xs=xs,
-        final_decisions=final_decisions,
-    )
+    return output, print_mask

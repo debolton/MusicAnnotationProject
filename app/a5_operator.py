@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 from pathlib import Path
 import importlib.util
-import json
 
 import numpy as np
 
@@ -8,12 +9,7 @@ from .canonical_v78 import build_v78
 
 
 ROOT = Path(__file__).resolve().parents[1]
-
-SAFE_CLEANUP_BUNDLE = (
-    ROOT
-    / "frozen"
-    / "a5_v1"
-)
+A5_V1_BUNDLE = ROOT / "frozen" / "a5_v1"
 
 EXPECTED_CHANNELS = [
     "obs",
@@ -30,66 +26,90 @@ EXPECTED_CHANNELS = [
 ]
 
 EXPECTED_PATCH_SIZE = 33
+EXPECTED_POLICY_ID = "A5-v1-print-p0980-margin0960-run2"
 
-A1_POLICY_ID = (
-    "A1-v2-observed-remove-paper-ambiguous-observed"
-)
+EXPECTED_POLICY = {
+    "annotation_action": "KEEP_A1_BYTE",
+    "annotation_threshold": 0.995,
+    "clean_image_permitted_at_runtime": False,
+    "connectivity": 8,
+    "development_policy_selected_post_outcome": True,
+    "effective_print_threshold": 0.980,
+    "fallback": "A1",
+    "independent_validation_completed": False,
+    "minimum_print_run": 2,
+    "outside_authoritative_mask": "IMMUTABLE_OBSERVED",
+    "policy_id": EXPECTED_POLICY_ID,
+    "print_action": "COPY_EXACT_OBSERVED_BYTE",
+    "print_margin": 0.960,
+    "print_threshold": 0.980,
+    "production_authorised": False,
+    "raw_page_coordinates_as_model_inputs": False,
+    "runtime_truth_permitted": False,
+    "status": "FROZEN_CANDIDATE_FOR_INDEPENDENT_TEST",
+    "truth_codes": {
+        "0": "ANNOTATION",
+        "1": "PRINT",
+        "2": "UNCERTAIN",
+    },
+    "uncertain_action": "KEEP_A1_BYTE",
+}
 
-DEFAULT_A5_POLICY_ID = (
-    "A5-safe-cleanup-ambiguous-only"
-)
+ALLOWED_DECISIONS = {
+    "ANNOTATION",
+    "PRINT",
+    "UNCERTAIN",
+}
 
 
 class A5Operator:
     """
-    Operational A5 safe-cleanup operator.
+    Frozen A5-v1 observed-print operator.
 
-    A1 contract:
-        PRESERVE  -> exact observed byte
-        REMOVE    -> paper estimate
-        AMBIGUOUS -> exact observed byte
-        outside prepared mask -> exact observed byte
+    Candidate population:
+        authoritative mask
+        AND observed byte < 200
+        AND not already PRESERVE-routed by frozen V7.8
 
-    A5 contract:
-        eligible population -> AMBIGUOUS only
-        CLEAN               -> paper estimate
-        non-CLEAN           -> exact A1 byte
-        outside AMBIGUOUS   -> exact A1 byte
-        outside prepared mask -> exact observed byte
+    Output contract:
+        PRINT      -> copy the exact observed byte
+        ANNOTATION -> retain the exact frozen V7.8 baseline byte
+        UNCERTAIN  -> retain the exact frozen V7.8 baseline byte
 
-    This is not the Notebook 91 observed-PRINT operator.
+    Integrity contract:
+        outside authoritative mask -> exact observed byte
+        outside final PRINT mask    -> exact frozen V7.8 baseline byte
+        every changed byte          -> exact observed byte
+
+    This operator is not a CLEAN-to-paper operator.
     """
 
-    a1_policy_id = A1_POLICY_ID
-    a5_policy_id = DEFAULT_A5_POLICY_ID
+    a5_policy_id = EXPECTED_POLICY_ID
 
     def __init__(
         self,
         device: str | None = None,
-        bundle_dir: Path | str = SAFE_CLEANUP_BUNDLE,
+        bundle_dir: Path | str = A5_V1_BUNDLE,
         run_startup_replay: bool = True,
     ):
         self.bundle_dir = Path(bundle_dir)
 
-        if not self.bundle_dir.exists():
+        if not self.bundle_dir.is_dir():
             raise RuntimeError(
-                "Missing operational safe-cleanup bundle: "
+                "Missing frozen A5-v1 bundle directory: "
                 f"{self.bundle_dir}"
             )
 
-        runtime_path = (
-            self.bundle_dir
-            / "inference_runtime.py"
-        )
+        runtime_path = self.bundle_dir / "inference_runtime.py"
 
-        if not runtime_path.exists():
+        if not runtime_path.is_file():
             raise RuntimeError(
-                "Missing operational safe-cleanup runtime: "
+                "Missing frozen A5-v1 inference runtime: "
                 f"{runtime_path}"
             )
 
         spec = importlib.util.spec_from_file_location(
-            "a5_safe_cleanup_frozen_runtime",
+            "a5_v1_frozen_runtime",
             runtime_path,
         )
 
@@ -101,7 +121,6 @@ class A5Operator:
 
         runtime = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(runtime)
-
         self.rt = runtime
 
         self._assert_runtime_api()
@@ -111,14 +130,9 @@ class A5Operator:
             device=device,
         )
 
-        if not isinstance(loaded, tuple):
+        if not isinstance(loaded, tuple) or len(loaded) != 5:
             raise RuntimeError(
-                "load_bundle() must return a tuple"
-            )
-
-        if len(loaded) != 5:
-            raise RuntimeError(
-                "load_bundle() must return exactly: "
+                "A5-v1 load_bundle() must return exactly "
                 "(model, calibrator, policy, schema, device)"
             )
 
@@ -132,15 +146,13 @@ class A5Operator:
 
         self._assert_bundle_contract()
 
-        self.bundle_id = (
+        self.bundle_id = str(
             self.policy.get("bundle_id")
             or self.policy.get("candidate_lock_id")
-            or self.policy.get("policy_id")
+            or self.policy["policy_id"]
         )
 
-        self.model_sha256 = self.policy.get(
-            "model_sha256"
-        )
+        self.model_sha256 = self.policy.get("model_sha256")
         self.calibrator_sha256 = self.policy.get(
             "calibrator_sha256"
         )
@@ -148,12 +160,10 @@ class A5Operator:
         self.startup_replay = None
 
         if run_startup_replay:
-            self.startup_replay = (
-                self._run_startup_replay()
-            )
+            self.startup_replay = self._run_startup_replay()
 
     # ------------------------------------------------------------------
-    # Bundle validation
+    # Frozen bundle validation
     # ------------------------------------------------------------------
 
     def _assert_runtime_api(self) -> None:
@@ -162,40 +172,38 @@ class A5Operator:
             "make_padded",
             "score_coordinates",
             "decisions",
+            "assemble",
         ]
 
         missing = [
             name
             for name in required
-            if not callable(
-                getattr(self.rt, name, None)
-            )
+            if not callable(getattr(self.rt, name, None))
         ]
 
         if missing:
             raise RuntimeError(
-                "Safe-cleanup frozen runtime API is incomplete: "
+                "Frozen A5-v1 runtime API is incomplete: "
                 f"{missing}"
             )
 
     def _assert_bundle_contract(self) -> None:
         if not isinstance(self.policy, dict):
             raise RuntimeError(
-                "Safe-cleanup policy must be a dictionary"
+                "Frozen A5-v1 policy must be a dictionary"
             )
 
         if not isinstance(self.schema, dict):
             raise RuntimeError(
-                "Safe-cleanup schema must be a dictionary"
+                "Frozen A5-v1 schema must be a dictionary"
             )
 
         channels = self.schema.get("channels")
 
         if channels != EXPECTED_CHANNELS:
             raise RuntimeError(
-                "Safe-cleanup channel order differs from the "
-                "expected 11-channel contract: "
-                f"{channels}"
+                "A5-v1 channel order differs from the frozen "
+                f"11-channel contract: {channels!r}"
             )
 
         patch = self.schema.get(
@@ -207,169 +215,77 @@ class A5Operator:
             EXPECTED_PATCH_SIZE
         ):
             raise RuntimeError(
-                "Safe-cleanup patch size differs from the "
-                f"expected {EXPECTED_PATCH_SIZE}x"
-                f"{EXPECTED_PATCH_SIZE} contract: {patch}"
+                "A5-v1 patch size differs from the frozen "
+                f"{EXPECTED_PATCH_SIZE}x{EXPECTED_PATCH_SIZE} "
+                f"contract: {patch!r}"
             )
 
-        probability_semantics = str(
-            self.policy.get(
-                "probability_semantics",
-                "",
-            )
-        ).upper()
-
-        positive_class = str(
-            self.policy.get(
-                "positive_class",
-                "",
-            )
-        ).upper()
-
-        if (
-            probability_semantics != "CLEAN"
-            and positive_class != "CLEAN"
-        ):
-            raise RuntimeError(
-                "Operational A5 bundle does not declare CLEAN "
-                "probability semantics. The Notebook 91 "
-                "observed-PRINT bundle must not be loaded here."
-            )
-
-        eligible_route = str(
-            self.policy.get(
-                "eligible_route",
-                "",
-            )
-        ).upper()
-
-        if eligible_route != "AMBIGUOUS":
-            raise RuntimeError(
-                "Operational A5 policy must declare "
-                "eligible_route='AMBIGUOUS'; found "
-                f"{eligible_route!r}"
-            )
-
-        clean_action = str(
-            self.policy.get(
-                "clean_action",
-                "",
-            )
-        ).upper()
-
-        if clean_action not in {
-            "PAPER",
-            "COPY_PAPER",
-            "COPY_PAPER_ESTIMATE",
-        }:
-            raise RuntimeError(
-                "Operational A5 policy must declare that CLEAN "
-                "copies the paper estimate; found "
-                f"{clean_action!r}"
-            )
-
-        default_action = str(
-            self.policy.get(
-                "default_action",
-                self.policy.get(
-                    "non_clean_action",
-                    "",
-                ),
-            )
-        ).upper()
-
-        if default_action not in {
-            "A1",
-            "KEEP_A1",
-            "COPY_A1",
-        }:
-            raise RuntimeError(
-                "Operational A5 default must retain exact A1; "
-                f"found {default_action!r}"
-            )
-
-        policy_id = self.policy.get("policy_id")
-
-        if not policy_id:
-            raise RuntimeError(
-                "Safe-cleanup policy has no policy_id"
-            )
-
-        self.a5_policy_id = str(policy_id)
-
-        truth_codes = self.policy.get(
-            "truth_codes",
-            {},
+        missing = sorted(
+            set(EXPECTED_POLICY) - set(self.policy)
         )
 
-        if truth_codes:
-            normalised_codes = {
-                str(key): str(value).upper()
-                for key, value in truth_codes.items()
-            }
-
-            allowed_classes = {
-                "CLEAN",
-                "KEEP",
-                "UNCERTAIN",
-            }
-
-            unexpected = (
-                set(normalised_codes.values())
-                - allowed_classes
+        if missing:
+            raise RuntimeError(
+                "Frozen A5-v1 policy is missing fields: "
+                f"{missing}"
             )
 
-            if unexpected:
+        for key, expected in EXPECTED_POLICY.items():
+            actual = self.policy[key]
+
+            if isinstance(expected, float):
+                try:
+                    actual_number = float(actual)
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        f"A5-v1 policy field {key!r} is not "
+                        f"numeric: {actual!r}"
+                    ) from exc
+
+                if actual_number != expected:
+                    raise RuntimeError(
+                        f"A5-v1 policy mismatch for {key}: "
+                        f"{actual_number!r} != {expected!r}"
+                    )
+            elif actual != expected:
                 raise RuntimeError(
-                    "Unexpected safe-cleanup class names: "
-                    f"{sorted(unexpected)}"
+                    f"A5-v1 policy mismatch for {key}: "
+                    f"{actual!r} != {expected!r}"
                 )
 
-            if "CLEAN" not in normalised_codes.values():
-                raise RuntimeError(
-                    "Safe-cleanup class mapping contains no "
-                    "CLEAN class"
-                )
+        effective = max(
+            float(self.policy["print_threshold"]),
+            (
+                1.0
+                + float(self.policy["print_margin"])
+            )
+            / 2.0,
+        )
 
-        if callable(
-            getattr(self.rt, "assemble", None)
+        if effective != float(
+            self.policy["effective_print_threshold"]
         ):
-            assemble_semantics = str(
-                self.policy.get(
-                    "runtime_assemble_semantics",
-                    "",
-                )
-            ).upper()
+            raise RuntimeError(
+                "A5-v1 effective PRINT threshold is "
+                "internally inconsistent: "
+                f"calculated {effective!r}, recorded "
+                f"{self.policy['effective_print_threshold']!r}"
+            )
 
-            if assemble_semantics in {
-                "PRINT_TO_OBSERVED",
-                "COPY_OBSERVED_AT_PRINT",
-                "OBSERVED_PRINT",
-            }:
-                raise RuntimeError(
-                    "Safe-cleanup bundle exposes historical "
-                    "observed-PRINT assembly semantics"
-                )
+        self.a5_policy_id = str(
+            self.policy["policy_id"]
+        )
 
     # ------------------------------------------------------------------
     # Startup replay
     # ------------------------------------------------------------------
 
-    def _run_startup_replay(self) -> dict:
+    def _run_startup_replay(self):
         """
-        Run the operational replay supplied for the safe-cleanup bundle.
+        Run the existing frozen A5-v1 replay gate.
 
-        Preferred API:
-            runtime.run_replay(
-                bundle_dir,
-                model,
-                calibrator,
-                policy,
-                schema,
-                device,
-            )
-
-        A separate application replay module may be used as a fallback.
+        The application replay is expected to verify the frozen
+        PRINT-to-observed and non-PRINT-to-V7.8 contract.
         """
 
         runtime_replay = getattr(
@@ -389,58 +305,59 @@ class A5Operator:
             )
         else:
             try:
-                from .a5_safe_cleanup_replay import (
-                    run_safe_cleanup_replay,
-                )
+                from .hf043_replay import run_ardross_replay
             except ImportError as exc:
                 raise RuntimeError(
-                    "No operational safe-cleanup startup replay "
-                    "is available. Provide runtime.run_replay() "
-                    "or app.a5_safe_cleanup_replay."
+                    "No A5-v1 startup replay is available. "
+                    "Provide runtime.run_replay() or "
+                    "app.hf043_replay.run_ardross_replay()."
                 ) from exc
 
-            replay = run_safe_cleanup_replay(self)
+            replay = run_ardross_replay(self)
 
-        if not isinstance(replay, dict):
+        if replay is False:
             raise RuntimeError(
-                "Safe-cleanup startup replay must return a "
-                "dictionary"
+                "Frozen A5-v1 startup replay failed"
             )
 
-        if replay.get("passed") is not True:
-            raise RuntimeError(
-                "Safe-cleanup startup replay failed: "
-                f"{json.dumps(replay, default=str)}"
-            )
-
-        replay_policy_id = replay.get("policy_id")
-
-        if (
-            replay_policy_id is not None
-            and replay_policy_id
-            != self.a5_policy_id
-        ):
-            raise RuntimeError(
-                "Safe-cleanup replay policy mismatch: "
-                f"{replay_policy_id} != "
-                f"{self.a5_policy_id}"
-            )
-
-        required_zero_checks = [
-            "outside_mask_drift",
-            "non_ambiguous_regression",
-            "non_clean_a1_regression",
-            "clean_not_equal_paper",
-        ]
-
-        for name in required_zero_checks:
-            value = replay.get(name)
-
-            if value is not None and int(value) != 0:
+        if isinstance(replay, dict):
+            if replay.get("passed") is False:
                 raise RuntimeError(
-                    "Safe-cleanup startup replay failed "
-                    f"{name}: {value}"
+                    "Frozen A5-v1 startup replay failed: "
+                    f"{replay}"
                 )
+
+            replay_policy_id = replay.get("policy_id")
+
+            if (
+                replay_policy_id is not None
+                and str(replay_policy_id)
+                != self.a5_policy_id
+            ):
+                raise RuntimeError(
+                    "A5-v1 replay policy mismatch: "
+                    f"{replay_policy_id!r} != "
+                    f"{self.a5_policy_id!r}"
+                )
+
+            zero_checks = [
+                "outside_mask_drift",
+                "outside_authoritative_mask_drift",
+                "non_print_baseline_regression",
+                "non_print_v78_regression",
+                "print_not_equal_observed",
+                "changed_byte_not_equal_observed",
+                "unexpected_changed_byte",
+            ]
+
+            for key in zero_checks:
+                value = replay.get(key)
+
+                if value is not None and int(value) != 0:
+                    raise RuntimeError(
+                        "Frozen A5-v1 startup replay failed "
+                        f"{key}: {value}"
+                    )
 
         return replay
 
@@ -462,33 +379,56 @@ class A5Operator:
             reviewed_seed,
         )
 
+        if "geometry_t80" not in base:
+            raise RuntimeError(
+                "build_v78() did not return the frozen "
+                "geometry_t80 baseline required by A5-v1"
+            )
+
+        if "channels" not in base:
+            raise RuntimeError(
+                "build_v78() did not return A5-v1 channels"
+            )
+
+        if "routes" not in base:
+            raise RuntimeError(
+                "build_v78() did not return V7.8 routes"
+            )
+
         result = self.process_arrays(
             arrays=base["channels"],
-            a1=base["a1"],
-            paper=base["routes"]["paper"],
-            ambiguous=base["routes"]["ambiguous"],
+            baseline=base["geometry_t80"],
             authoritative_mask=base["mask"],
-            eligible=base["eligible"],
             batch=batch,
         )
 
         return {
             **base,
+
+            # Frozen A5-v1 whole-page result.
             "a5": result["corrected"],
-            "p_clean": result["probability"],
+            "a5_v1": result["corrected"],
+
+            # Calibrated PRINT probability.
+            "p_print": result["probability"],
+
+            # Three-class decisions.
             "provisional": result["provisional"],
             "final": result["final"],
-            "clean_mask": result["clean_mask"],
-            "eligible": result["eligible"],
-            "ys": result["y"],
-            "xs": result["x"],
-            "a1_policy_id": self.a1_policy_id,
+
+            # Frozen candidate and effective intervention maps.
+            "eligible_a5_v1": result["eligible"],
+            "print_mask": result["print_mask"],
+
+            # Candidate coordinates.
+            "a5_ys": result["y"],
+            "a5_xs": result["x"],
+
+            # Frozen identities.
             "a5_policy_id": self.a5_policy_id,
             "bundle_id": self.bundle_id,
             "model_sha256": self.model_sha256,
-            "calibrator_sha256": (
-                self.calibrator_sha256
-            ),
+            "calibrator_sha256": self.calibrator_sha256,
         }
 
     # ------------------------------------------------------------------
@@ -498,16 +438,18 @@ class A5Operator:
     def process_arrays(
         self,
         arrays: dict,
-        a1: np.ndarray,
-        paper: np.ndarray,
-        ambiguous: np.ndarray,
+        baseline: np.ndarray,
         authoritative_mask: np.ndarray | None = None,
-        eligible: np.ndarray | None = None,
         batch: int = 512,
     ) -> dict:
         if not isinstance(arrays, dict):
             raise RuntimeError(
-                "Safe-cleanup arrays must be a dictionary"
+                "A5-v1 arrays must be a dictionary"
+            )
+
+        if not isinstance(batch, int) or batch < 1:
+            raise ValueError(
+                "batch must be a positive integer"
             )
 
         required_channels = list(
@@ -522,7 +464,7 @@ class A5Operator:
 
         if missing:
             raise RuntimeError(
-                "Safe-cleanup arrays omit channels: "
+                "A5-v1 arrays omit channels: "
                 f"{missing}"
             )
 
@@ -530,20 +472,16 @@ class A5Operator:
             arrays["obs"],
             "observed",
         )
-        a1 = self._require_uint8_image(
-            a1,
-            "a1",
-            observed.shape,
-        )
-        paper = self._require_uint8_image(
-            paper,
-            "paper",
+
+        baseline = self._require_uint8_image(
+            baseline,
+            "frozen V7.8 baseline",
             observed.shape,
         )
 
         schema_mask = self._require_bool_mask(
             arrays["mask"],
-            "schema mask",
+            "channel mask",
             observed.shape,
         )
 
@@ -564,63 +502,104 @@ class A5Operator:
                     "Authoritative mask and channel mask differ"
                 )
 
-        schema_ambiguous = self._require_bool_mask(
-            arrays["ambiguous"],
-            "schema ambiguous",
+        preserve = self._require_bool_mask(
+            arrays["preserve"],
+            "preserve route",
+            observed.shape,
+        )
+
+        remove = self._require_bool_mask(
+            arrays["remove"],
+            "remove route",
             observed.shape,
         )
 
         ambiguous = self._require_bool_mask(
-            ambiguous,
-            "ambiguous",
+            arrays["ambiguous"],
+            "ambiguous route",
             observed.shape,
         )
 
+        routed = preserve | remove | ambiguous
+
+        if np.any(preserve & remove):
+            raise RuntimeError(
+                "PRESERVE and REMOVE routes overlap"
+            )
+
+        if np.any(preserve & ambiguous):
+            raise RuntimeError(
+                "PRESERVE and AMBIGUOUS routes overlap"
+            )
+
+        if np.any(remove & ambiguous):
+            raise RuntimeError(
+                "REMOVE and AMBIGUOUS routes overlap"
+            )
+
         if not np.array_equal(
-            ambiguous,
-            schema_ambiguous,
+            routed,
+            mask,
+        ):
+            missing_route = int(
+                np.sum(mask & ~routed)
+            )
+            escaped_route = int(
+                np.sum(routed & ~mask)
+            )
+
+            raise RuntimeError(
+                "V7.8 routes do not exactly partition the "
+                "authoritative mask: "
+                f"missing={missing_route}, "
+                f"outside={escaped_route}"
+            )
+
+        if np.any(
+            baseline[~mask]
+            != observed[~mask]
         ):
             raise RuntimeError(
-                "Supplied AMBIGUOUS route differs from the "
-                "channel AMBIGUOUS route"
+                "Frozen V7.8 baseline has outside-mask drift"
             )
 
-        if eligible is None:
-            eligible_mask = ambiguous.copy()
-        else:
-            eligible_mask = self._require_bool_mask(
-                eligible,
-                "eligible",
-                observed.shape,
-            )
+        # Frozen A5-v1 candidate rule:
+        #
+        #   inside prepared authoritative mask
+        #   AND observed byte below 200
+        #   AND not already PRESERVE-routed by V7.8
+        eligible = (
+            mask
+            & (observed < 200)
+            & ~preserve
+        )
 
-        if np.any(eligible_mask & ~ambiguous):
+        if np.any(
+            eligible
+            & ~mask
+        ):
             raise RuntimeError(
-                "A5 eligibility includes non-AMBIGUOUS pixels"
+                "A5-v1 eligibility escapes the "
+                "authoritative mask"
             )
 
-        if np.any(eligible_mask & ~mask):
+        if np.any(
+            eligible
+            & preserve
+        ):
             raise RuntimeError(
-                "A5 eligibility escapes the prepared mask"
+                "A5-v1 eligibility includes PRESERVE pixels"
             )
 
-        if np.any(ambiguous & ~mask):
+        if np.any(
+            eligible
+            & (observed >= 200)
+        ):
             raise RuntimeError(
-                "AMBIGUOUS route escapes the prepared mask"
+                "A5-v1 eligibility includes non-dark pixels"
             )
 
-        if np.any(a1[ambiguous] != observed[ambiguous]):
-            raise RuntimeError(
-                "Operational A1 does not retain observed bytes "
-                "at AMBIGUOUS coordinates"
-            )
-
-        if np.any(a1[~mask] != observed[~mask]):
-            raise RuntimeError(
-                "Operational A1 has outside-mask drift"
-            )
-
-        y, x = np.where(eligible_mask)
+        y, x = np.where(eligible)
         y = y.astype(np.int64)
         x = x.astype(np.int64)
 
@@ -643,29 +622,30 @@ class A5Operator:
         )
 
         if len(y) == 0:
-            clean_mask = np.zeros(
+            print_mask = np.zeros(
                 observed.shape,
                 dtype=bool,
             )
 
-            corrected = self._assemble_safe_cleanup(
+            corrected = baseline.copy()
+
+            self._assert_output_contract(
                 observed=observed,
-                a1=a1,
-                paper=paper,
+                baseline=baseline,
                 mask=mask,
-                ambiguous=ambiguous,
-                eligible=eligible_mask,
-                clean_mask=clean_mask,
+                eligible=eligible,
+                print_mask=print_mask,
+                corrected=corrected,
             )
 
             return {
-                "eligible": eligible_mask,
+                "eligible": eligible,
                 "probability": probability_map,
                 "provisional": provisional_map,
                 "final": final_map,
                 "y": y,
                 "x": x,
-                "clean_mask": clean_mask,
+                "print_mask": print_mask,
                 "corrected": corrected,
             }
 
@@ -692,14 +672,16 @@ class A5Operator:
 
         if probability.shape != (len(y),):
             raise RuntimeError(
-                "Safe-cleanup probability shape mismatch: "
+                "A5-v1 PRINT probability shape mismatch: "
                 f"expected {(len(y),)}, "
                 f"found {probability.shape}"
             )
 
-        if not np.isfinite(probability).all():
+        if not np.isfinite(
+            probability
+        ).all():
             raise RuntimeError(
-                "Safe-cleanup probability contains "
+                "A5-v1 PRINT probability contains "
                 "non-finite values"
             )
 
@@ -708,7 +690,7 @@ class A5Operator:
             or np.any(probability > 1.0)
         ):
             raise RuntimeError(
-                "Safe-cleanup probability lies outside 0..1"
+                "A5-v1 PRINT probability lies outside 0..1"
             )
 
         decision_result = self.rt.decisions(
@@ -721,7 +703,7 @@ class A5Operator:
 
         provisional, final = (
             self._normalise_decision_result(
-                decision_result,
+                decision_result=decision_result,
                 probability_count=len(y),
                 image_shape=observed.shape,
                 y=y,
@@ -735,50 +717,88 @@ class A5Operator:
         provisional_map[y, x] = provisional
         final_map[y, x] = final
 
-        clean_at_coordinates = (
-            np.char.upper(
-                final.astype(str)
-            )
-            == "CLEAN"
+        corrected, print_mask = self.rt.assemble(
+            observed,
+            baseline,
+            mask,
+            y,
+            x,
+            final,
         )
 
-        clean_mask = np.zeros(
+        corrected = self._require_uint8_image(
+            corrected,
+            "A5-v1 corrected page",
+            observed.shape,
+        )
+
+        print_mask = self._require_bool_mask(
+            print_mask,
+            "A5-v1 PRINT mask",
+            observed.shape,
+        )
+
+        expected_print_mask = np.zeros(
             observed.shape,
             dtype=bool,
         )
-        clean_mask[
-            y[clean_at_coordinates],
-            x[clean_at_coordinates],
+
+        selected = (
+            final
+            == "PRINT"
+        )
+
+        expected_print_mask[
+            y[selected],
+            x[selected],
         ] = True
 
-        if np.any(clean_mask & ~eligible_mask):
-            raise RuntimeError(
-                "CLEAN decision exists outside A5 eligibility"
+        if not np.array_equal(
+            print_mask,
+            expected_print_mask,
+        ):
+            missing_print = int(
+                np.sum(
+                    expected_print_mask
+                    & ~print_mask
+                )
+            )
+            unexpected_print = int(
+                np.sum(
+                    print_mask
+                    & ~expected_print_mask
+                )
             )
 
-        corrected = self._assemble_safe_cleanup(
+            raise RuntimeError(
+                "Runtime PRINT mask differs from final PRINT "
+                "decisions: "
+                f"missing={missing_print}, "
+                f"unexpected={unexpected_print}"
+            )
+
+        self._assert_output_contract(
             observed=observed,
-            a1=a1,
-            paper=paper,
+            baseline=baseline,
             mask=mask,
-            ambiguous=ambiguous,
-            eligible=eligible_mask,
-            clean_mask=clean_mask,
+            eligible=eligible,
+            print_mask=print_mask,
+            corrected=corrected,
         )
 
         return {
-            "eligible": eligible_mask,
+            "eligible": eligible,
             "probability": probability_map,
             "provisional": provisional_map,
             "final": final_map,
             "y": y,
             "x": x,
-            "clean_mask": clean_mask,
+            "print_mask": print_mask,
             "corrected": corrected,
         }
 
     # ------------------------------------------------------------------
-    # Decision normalisation
+    # Decision validation
     # ------------------------------------------------------------------
 
     def _normalise_decision_result(
@@ -795,13 +815,11 @@ class A5Operator:
                 or "final" not in decision_result
             ):
                 raise RuntimeError(
-                    "decisions() dictionary must contain "
+                    "A5-v1 decisions() dictionary must contain "
                     "'provisional' and 'final'"
                 )
 
-            provisional = decision_result[
-                "provisional"
-            ]
+            provisional = decision_result["provisional"]
             final = decision_result["final"]
 
         elif (
@@ -812,7 +830,7 @@ class A5Operator:
 
         else:
             raise RuntimeError(
-                "decisions() must return either "
+                "A5-v1 decisions() must return either "
                 "(provisional, final) or a dictionary"
             )
 
@@ -829,7 +847,7 @@ class A5Operator:
             probability_count,
         ):
             raise RuntimeError(
-                "Provisional-decision shape mismatch: "
+                "A5-v1 provisional-decision shape mismatch: "
                 f"{provisional.shape}"
             )
 
@@ -837,7 +855,7 @@ class A5Operator:
             probability_count,
         ):
             raise RuntimeError(
-                "Final-decision shape mismatch: "
+                "A5-v1 final-decision shape mismatch: "
                 f"{final.shape}"
             )
 
@@ -845,10 +863,29 @@ class A5Operator:
             provisional,
             "provisional",
         )
+
         final = self._normalise_classes(
             final,
             "final",
         )
+
+        if np.any(
+            (final == "PRINT")
+            & (provisional != "PRINT")
+        ):
+            raise RuntimeError(
+                "A5-v1 run filtering created a new PRINT "
+                "decision"
+            )
+
+        if np.any(
+            (provisional == "ANNOTATION")
+            & (final != "ANNOTATION")
+        ):
+            raise RuntimeError(
+                "A5-v1 run filtering altered an ANNOTATION "
+                "decision"
+            )
 
         return provisional, final
 
@@ -862,32 +899,40 @@ class A5Operator:
         truth_codes = self.policy.get(
             "truth_codes",
             {},
-        )
+       )
 
-        if truth_codes and np.issubdtype(
-            values.dtype,
-            np.number,
+        if (
+            truth_codes
+            and np.issubdtype(
+                values.dtype,
+                np.number,
+            )
         ):
             mapping = {
                 int(key): str(value).upper()
-                for key, value in truth_codes.items()
+                for key, value
+                in truth_codes.items()
             }
 
+            integer_values = values.astype(
+                np.int64
+            )
+
             unknown = sorted(
-                set(values.astype(int).tolist())
+                set(integer_values.tolist())
                 - set(mapping)
             )
 
             if unknown:
                 raise RuntimeError(
-                    f"{name} decisions contain unknown codes: "
-                    f"{unknown}"
+                    f"{name} decisions contain unknown "
+                    f"numeric codes: {unknown}"
                 )
 
             normalised = np.asarray(
                 [
                     mapping[int(value)]
-                    for value in values
+                    for value in integer_values
                 ],
                 dtype=object,
             )
@@ -896,81 +941,48 @@ class A5Operator:
                 values.astype(str)
             ).astype(object)
 
-        allowed = {
-            "CLEAN",
-            "KEEP",
-            "UNCERTAIN",
-        }
-
         unexpected = sorted(
             set(normalised.tolist())
-            - allowed
+            - ALLOWED_DECISIONS
         )
 
         if unexpected:
             raise RuntimeError(
                 f"{name} decisions contain unexpected "
-                f"classes: {unexpected}"
+                f"A5-v1 classes: {unexpected}"
             )
 
         return normalised
 
     # ------------------------------------------------------------------
-    # Operational A5 page assembly
+    # Frozen whole-page integrity checks
     # ------------------------------------------------------------------
 
-    def _assemble_safe_cleanup(
-        self,
+    @staticmethod
+    def _assert_output_contract(
         observed: np.ndarray,
-        a1: np.ndarray,
-        paper: np.ndarray,
+        baseline: np.ndarray,
         mask: np.ndarray,
-        ambiguous: np.ndarray,
         eligible: np.ndarray,
-        clean_mask: np.ndarray,
-    ) -> np.ndarray:
-        if np.any(clean_mask & ~eligible):
-            raise RuntimeError(
-                "A5 CLEAN escapes the eligible population"
-            )
-
-        if np.any(clean_mask & ~ambiguous):
-            raise RuntimeError(
-                "A5 CLEAN includes non-AMBIGUOUS pixels"
-            )
-
-        if np.any(clean_mask & ~mask):
-            raise RuntimeError(
-                "A5 CLEAN escapes the prepared mask"
-            )
-
-        corrected = a1.copy()
-        corrected[clean_mask] = paper[clean_mask]
-
+        print_mask: np.ndarray,
+        corrected: np.ndarray,
+    ) -> None:
         if np.any(
-            corrected[clean_mask]
-            != paper[clean_mask]
+            print_mask
+            & ~eligible
         ):
             raise RuntimeError(
-                "A5 CLEAN output does not equal paper"
-            )
-
-        non_clean = ~clean_mask
-
-        if np.any(
-            corrected[non_clean]
-            != a1[non_clean]
-        ):
-            raise RuntimeError(
-                "A5 non-CLEAN output differs from A1"
+                "A5-v1 PRINT decision escapes the eligible "
+                "population"
             )
 
         if np.any(
-            corrected[~ambiguous]
-            != a1[~ambiguous]
+            print_mask
+            & ~mask
         ):
             raise RuntimeError(
-                "A5 changed a non-AMBIGUOUS pixel"
+                "A5-v1 PRINT decision escapes the "
+                "authoritative mask"
             )
 
         if np.any(
@@ -978,15 +990,37 @@ class A5Operator:
             != observed[~mask]
         ):
             raise RuntimeError(
-                "A5 changed a pixel outside the "
-                "prepared mask"
+                "A5-v1 outside-authoritative-mask drift"
             )
 
-        changed = corrected != a1
+        if np.any(
+            corrected[~print_mask]
+            != baseline[~print_mask]
+        ):
+            raise RuntimeError(
+                "A5-v1 non-PRINT frozen V7.8 regression"
+            )
+
+        if np.any(
+            corrected[print_mask]
+            != observed[print_mask]
+        ):
+            raise RuntimeError(
+                "A5-v1 PRINT output does not equal the exact "
+                "observed byte"
+            )
+
+        changed = (
+            corrected
+            != baseline
+        )
 
         expected_changed = (
-            clean_mask
-            & (paper != a1)
+            print_mask
+            & (
+                observed
+                != baseline
+            )
         )
 
         if not np.array_equal(
@@ -999,6 +1033,7 @@ class A5Operator:
                     & ~expected_changed
                 )
             )
+
             missing = int(
                 np.sum(
                     expected_changed
@@ -1007,12 +1042,21 @@ class A5Operator:
             )
 
             raise RuntimeError(
-                "A5 delta does not equal effective CLEAN-to-"
-                "paper changes: "
+                "A5-v1 page delta does not equal effective "
+                "PRINT restoration: "
                 f"unexpected={unexpected}, missing={missing}"
             )
 
-        return corrected
+        if np.any(
+            changed
+            & (
+                corrected
+                != observed
+            )
+        ):
+            raise RuntimeError(
+                "A5-v1 changed byte does not equal observed"
+            )
 
     # ------------------------------------------------------------------
     # Input helpers
@@ -1029,15 +1073,17 @@ class A5Operator:
         if value.ndim != 2:
             raise RuntimeError(
                 f"{name} must be two-dimensional; "
-                f"found {value.shape}"
+                f"found shape {value.shape}"
             )
 
-        if expected_shape is not None:
-            if value.shape != expected_shape:
-                raise RuntimeError(
-                    f"{name} shape mismatch: expected "
-                    f"{expected_shape}, found {value.shape}"
-                )
+        if (
+            expected_shape is not None
+            and value.shape != expected_shape
+        ):
+            raise RuntimeError(
+                f"{name} shape mismatch: expected "
+                f"{expected_shape}, found {value.shape}"
+            )
 
         if not np.issubdtype(
             value.dtype,
@@ -1052,7 +1098,10 @@ class A5Operator:
                 f"{name} contains non-finite values"
             )
 
-        if value.min() < 0 or value.max() > 255:
+        if value.size and (
+            value.min() < 0
+            or value.max() > 255
+        ):
             raise RuntimeError(
                 f"{name} contains values outside 0..255"
             )
@@ -1072,7 +1121,7 @@ class A5Operator:
         if value.ndim != 2:
             raise RuntimeError(
                 f"{name} must be two-dimensional; "
-                f"found {value.shape}"
+                f"found shape {value.shape}"
             )
 
         if value.shape != expected_shape:
