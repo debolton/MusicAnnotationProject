@@ -15,7 +15,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from . import store, yolo
-from .A5_operator import A5Operator
+from .a5_operator import A5Operator
 from .hf045_batch import BatchFailure, run_batch
 
 
