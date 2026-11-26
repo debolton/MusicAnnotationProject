@@ -8,7 +8,13 @@ import zipfile
 import cv2
 import numpy as np
 import torch
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import (
+    FastAPI,
+    UploadFile,
+    File,
+    HTTPException,
+    Request,
+)
 from fastapi.responses import HTMLResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -1729,7 +1735,11 @@ def diagnostic(sid: str, name: str):
 # ---------------------------------------------------------------------------
 
 @app.post("/api/session/{sid}/approval")
-def approval(sid: str, value: Approval):
+def approval(
+    sid: str,
+    value: Approval,
+    request: Request,
+):
     allowed = {
         "approved",
         "return_to_mask",
@@ -1770,12 +1780,12 @@ def approval(sid: str, value: Approval):
         "ok": True,
         "status": value.status,
         "finish_url": (
-            f"/api/session/{sid}/finish"
-            if value.status == "approved"
-            else None
-        ),
-        "download_url": (
-            f"/api/session/{sid}/download"
+            str(
+                request.url_for(
+                    "finish_session",
+                    sid=sid,
+                )
+            )
             if value.status == "approved"
             else None
         ),
@@ -1785,23 +1795,36 @@ def approval(sid: str, value: Approval):
         "decision_overlay_url": (
             f"/api/session/{sid}/diagnostic/decisions"
         ),
-        "mask_overlay_url": (
-            f"/api/session/{sid}/overlay"
-        ),
     }
+
 
 @app.post("/api/session/{sid}/approve")
 def approve_compatibility(
     sid: str,
     value: Approval,
+    request: Request,
 ):
     return approval(
-        sid,
-        value,
+        sid=sid,
+        value=value,
+        request=request,
     )
 
-@app.post("/api/session/{sid}/finish")
-def finish(sid: str):
+def evidence_zip_path(sid: str) -> Path:
+    return (
+        store.folder(sid)
+        / "hf_04_5_training_and_audit.zip"
+    )
+
+
+@app.post(
+    "/api/session/{sid}/finish",
+    name="finish_session",
+)
+def finish(
+    sid: str,
+    request: Request,
+):
     directory = store.folder(sid)
     session = store.load(sid)
 
@@ -1900,7 +1923,7 @@ def finish(sid: str):
             },
         )
 
-    output = directory / "hf_04_5_training_and_audit.zip"
+    output = evidence_zip_path(sid)
 
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -1950,28 +1973,64 @@ def finish(sid: str):
             if path.is_file() and path != output:
                 archive.write(path, path.name)
 
+    download_url = request.url_for(
+        "download_evidence_zip",
+        sid=sid,
+    )
+
     return {
-        "download_url": f"/api/session/{sid}/download",
+        "ok": True,
+        "package_created": True,
+        "package_filename": output.name,
+        "package_bytes": output.stat().st_size,
+        "download_url": str(download_url),
     }
 
 
-@app.get("/api/session/{sid}/download")
-def download(sid: str):
-    path = (
-        store.folder(sid)
-        / "hf_04_5_training_and_audit.zip"
-    )
+@app.get(
+    "/api/session/{sid}/download.zip",
+    name="download_evidence_zip",
+)
+def download_evidence_zip(sid: str):
+    path = evidence_zip_path(sid)
 
-    if not path.exists():
+    if not path.is_file():
         raise HTTPException(
             status_code=404,
-            detail="Finish package has not been created",
+            detail={
+                "message": (
+                    "Finish package has not been created"
+                ),
+                "session_id": sid,
+                "expected_path": str(path),
+            },
+        )
+
+    if path.stat().st_size == 0:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": (
+                    "The evidence ZIP exists but is empty"
+                ),
+                "session_id": sid,
+            },
         )
 
     return FileResponse(
-        path,
-        filename="hf_04_5_training_and_audit.zip",
+        path=str(path),
+        media_type="application/zip",
+        filename=path.name,
+        headers={
+            "Cache-Control": "no-store",
+        },
     )
+
+@app.get("/api/session/{sid}/download")
+def download_evidence_zip_compatibility(
+    sid: str,
+):
+    return download_evidence_zip(sid)
 
 
 # ---------------------------------------------------------------------------
@@ -2049,7 +2108,7 @@ def download_startup_evidence():
 
     required = [
         verdict,
-        a1_replay,
+        v78_replay,
         a5_replay,
         v78_summary,
         v78_csv,
