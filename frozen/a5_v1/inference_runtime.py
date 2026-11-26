@@ -305,7 +305,7 @@ def _assert_schema_contract(
         ),
     )
 
-    if int(configured_channels) != len(channels):
+    if len(configured_channels) != len(channels):
         raise RuntimeError(
             "model_config channel count disagrees with "
             "channel_schema"
