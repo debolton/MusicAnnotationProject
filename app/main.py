@@ -152,16 +152,63 @@ def write_png(path: Path, image: np.ndarray) -> None:
 
 
 def png(image: np.ndarray) -> Response:
-    image = require_image(image, "response image")
-    ok, encoded = cv2.imencode(".png", image)
+    image = np.asarray(image)
+
+    if image.ndim not in (2, 3):
+        raise RuntimeError(
+            "PNG response image must be either "
+            "2-D greyscale or 3-D colour; "
+            f"found shape {image.shape}"
+        )
+
+    if image.ndim == 3:
+        if image.shape[2] not in (3, 4):
+            raise RuntimeError(
+                "Colour PNG response must have "
+                "3 BGR channels or 4 BGRA channels; "
+                f"found shape {image.shape}"
+            )
+
+    if image.dtype != np.uint8:
+        if not np.issubdtype(
+            image.dtype,
+            np.number,
+        ):
+            raise RuntimeError(
+                "PNG response image must contain "
+                f"numeric values; found {image.dtype}"
+            )
+
+        if not np.isfinite(image).all():
+            raise RuntimeError(
+                "PNG response image contains "
+                "non-finite values"
+            )
+
+        image = np.clip(
+            image,
+            0,
+            255,
+        ).astype(np.uint8)
+
+    image = np.ascontiguousarray(image)
+
+    ok, encoded = cv2.imencode(
+        ".png",
+        image,
+    )
 
     if not ok:
-        raise RuntimeError("PNG encoding failed")
+        raise RuntimeError(
+            "PNG encoding failed"
+        )
 
     return Response(
         content=encoded.tobytes(),
         media_type="image/png",
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": "no-store",
+        },
     )
 
 
