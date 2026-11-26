@@ -86,11 +86,11 @@ def get_model():
     return _model
 
 
-def get_correction_operator() -> CorrectionOperator:
+def get_correction_operator() -> A5Operator:
     global _correction_operator
 
     if _correction_operator is None:
-        _correction_operator = CorrectionOperator(
+        _correction_operator = A5Operator(
             device=get_device(),
         )
 
@@ -1145,7 +1145,7 @@ def startup_evidence_status():
 async def batch_a1_a5(file: UploadFile = File(...)):
     """
     HF-04.5 remains fail-closed until hf045_batch.run_batch has been
-    updated to consume CorrectionOperator and the operational A1/A5
+    updated to consume A5Operator and the operational A1/A5
     result contract.
 
     Do not send the historical Notebook 91 A5Operator into this route.
