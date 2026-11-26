@@ -24,9 +24,9 @@ from .hf045_batch import BatchFailure, run_batch
 # ---------------------------------------------------------------------------
 
 APP_VERSION = "4.5.0"
-CORRECTION_CONTRACT = "operational-a1-plus-safe-cleanup-a5"
-A1_POLICY_ID = "A1-v2-observed-remove-paper-ambiguous-observed"
-A5_POLICY_ID = "A5-safe-cleanup-ambiguous-only"
+CORRECTION_CONTRACT = "frozen-v7.8-plus-a5-v1-observed-print"
+V78_POLICY_ID = "V7.8-geometry-t80"
+A5_POLICY_ID = "A5-v1-print-p0980-margin0960-run2"
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -210,17 +210,6 @@ def png(image: np.ndarray) -> Response:
             "Cache-Control": "no-store",
         },
     )
-
-
-def overlay(gray: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    gray = require_image(gray, "overlay source")
-    mask = require_image(mask, "overlay mask", gray.shape)
-
-    rgb = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-    colour = rgb.copy()
-    colour[mask > 0] = (60, 60, 255)
-
-    return cv2.addWeighted(rgb, 0.62, colour, 0.38, 0)
 
 
 def read_session_png(sid: str, filename: str) -> np.ndarray:
@@ -776,7 +765,6 @@ def validate_operational_result(
     result["a5"] = a5
 
     result["eligible_a5_v1"] = eligible_a5_v1
-    result["eligible_a5_v1"] = eligible_a5_v1
 
     result["p_print"] = p_print
     result["provisional"] = provisional
@@ -1110,6 +1098,7 @@ def authorise(sid: str):
         session["gray"],
         "observed session page",
     )
+
     reviewed_seed = require_image(
         session["working"],
         "reviewed authoritative seed",
@@ -1132,9 +1121,317 @@ def authorise(sid: str):
             observed=observed,
             result=result,
         )
+
+        mask = result["mask"]
+        routes = result["routes"]
+
+        baseline = result["geometry_t80"]
+        a5 = result["a5"]
+
+        print_mask = result["print_mask"]
+        eligible = result["eligible_a5_v1"]
+
+        p_print = result["p_print"]
+        provisional = result["provisional"]
+        final = result["final"]
+
+        preserve = routes["preserve"]
+        remove = routes["remove"]
+        ambiguous = routes["ambiguous"]
+
+        outside_mask = ~mask
+        non_print = ~print_mask
+
+        changed = (
+            a5 != baseline
+        )
+
+        expected_changed = (
+            print_mask
+            & (observed != baseline)
+        )
+
+        # --------------------------------------------------------
+        # Persist canonical V7.8 evidence
+        # --------------------------------------------------------
+
+        write_png(
+            directory / "prepared_dilation2_mask.png",
+            mask,
+        )
+
+        write_png(
+            directory / "telea_diagnostic.png",
+            result["telea"],
+        )
+
+        write_png(
+            directory / "paper_estimate.png",
+            result["paper"],
+        )
+
+        write_png(
+            directory / "route_preserve.png",
+            preserve,
+        )
+
+        write_png(
+            directory / "route_remove.png",
+            remove,
+        )
+
+        write_png(
+            directory / "route_ambiguous.png",
+            ambiguous,
+        )
+
+        write_png(
+            directory / "v7_8_corrected.png",
+            baseline,
+        )
+
+        # Compatibility alias for the existing UI/package.
+        write_png(
+            directory / "a1_corrected.png",
+            baseline,
+        )
+
+        # --------------------------------------------------------
+        # Persist frozen A5-v1 evidence
+        # --------------------------------------------------------
+
+        write_png(
+            directory / "a5_eligible.png",
+            eligible,
+        )
+
+        # Compatibility alias for any existing frontend route.
+        write_png(
+            directory / "a5_eligible_ambiguous.png",
+            eligible,
+        )
+
+        write_png(
+            directory / "a5_print_mask.png",
+            print_mask,
+        )
+
+        write_png(
+            directory / "a5_corrected.png",
+            a5,
+        )
+
+        write_png(
+            directory / "a5_delta_from_v7_8.png",
+            changed,
+        )
+
+        # Compatibility alias for the existing frontend/package.
+        write_png(
+            directory / "a5_delta_from_a1.png",
+            changed,
+        )
+
+        np.save(
+            directory / "a5_print_probability.npy",
+            p_print,
+        )
+
+        np.save(
+            directory / "a5_provisional_decision.npy",
+            provisional,
+            allow_pickle=True,
+        )
+
+        np.save(
+            directory / "a5_final_decision.npy",
+            final,
+            allow_pickle=True,
+        )
+
+        # --------------------------------------------------------
+        # Whole-page integrity audit
+        # --------------------------------------------------------
+
+        audit = {
+            "created_utc": (
+                datetime.now(timezone.utc).isoformat()
+            ),
+            "session_id": sid,
+            "app_version": APP_VERSION,
+            "correction_contract": CORRECTION_CONTRACT,
+
+            "v7_8_baseline": "geometry_t80",
+            "a5_action": "COPY_EXACT_OBSERVED_BYTE",
+            "a5_fallback": "geometry_t80",
+
+            "a5_policy_id": result.get(
+                "a5_policy_id",
+                A5_POLICY_ID,
+            ),
+            "a5_bundle_id": result.get(
+                "bundle_id"
+            ),
+            "a5_model_sha256": result.get(
+                "model_sha256"
+            ),
+            "a5_calibrator_sha256": result.get(
+                "calibrator_sha256"
+            ),
+
+            "prepared_mask_pixels": int(
+                mask.sum()
+            ),
+            "preserve_pixels": int(
+                preserve.sum()
+            ),
+            "remove_pixels": int(
+                remove.sum()
+            ),
+            "ambiguous_pixels": int(
+                ambiguous.sum()
+            ),
+
+            "a5_eligible_pixels": int(
+                eligible.sum()
+            ),
+            "a5_final_print_pixels": int(
+                print_mask.sum()
+            ),
+            "a5_effectively_changed_pixels": int(
+                changed.sum()
+            ),
+
+            "a5_final_annotation_pixels": int(
+                np.sum(
+                    final[eligible]
+                    == "ANNOTATION"
+                )
+            ),
+            "a5_final_uncertain_pixels": int(
+                np.sum(
+                    final[eligible]
+                    == "UNCERTAIN"
+                )
+            ),
+
+            # Required zero-value integrity fields.
+            "v7_8_outside_mask_drift": int(
+                np.sum(
+                    baseline[outside_mask]
+                    != observed[outside_mask]
+                )
+            ),
+
+            "a5_outside_mask_drift": int(
+                np.sum(
+                    a5[outside_mask]
+                    != observed[outside_mask]
+                )
+            ),
+
+            "a5_non_print_v7_8_regression": int(
+                np.sum(
+                    a5[non_print]
+                    != baseline[non_print]
+                )
+            ),
+
+            "a5_print_not_equal_observed": int(
+                np.sum(
+                    a5[print_mask]
+                    != observed[print_mask]
+                )
+            ),
+
+            "a5_changed_byte_not_equal_observed": int(
+                np.sum(
+                    changed
+                    & (a5 != observed)
+                )
+            ),
+
+            "a5_unexpected_changed_byte": int(
+                np.sum(
+                    changed
+                    & ~expected_changed
+                )
+            ),
+
+            "a5_missing_effective_print_change": int(
+                np.sum(
+                    expected_changed
+                    & ~changed
+                )
+            ),
+
+            "print_outside_eligibility": int(
+                np.sum(
+                    print_mask
+                    & ~eligible
+                )
+            ),
+
+            "print_outside_authoritative_mask": int(
+                np.sum(
+                    print_mask
+                    & ~mask
+                )
+            ),
+
+            # Telea is diagnostic as a separate published output,
+            # but it contributes operationally to geometry_t80 at
+            # V7.8 AMBIGUOUS coordinates.
+            "telea_contributes_to_v7_8_ambiguous": bool(
+                ambiguous.any()
+            ),
+
+            "clean_image_used_at_runtime": False,
+            "historical_notebook91_drives_output": False,
+        }
+
+        zero_fields = [
+            "v7_8_outside_mask_drift",
+            "a5_outside_mask_drift",
+            "a5_non_print_v7_8_regression",
+            "a5_print_not_equal_observed",
+            "a5_changed_byte_not_equal_observed",
+            "a5_unexpected_changed_byte",
+            "a5_missing_effective_print_change",
+            "print_outside_eligibility",
+            "print_outside_authoritative_mask",
+        ]
+
+        failures = {
+            key: audit[key]
+            for key in zero_fields
+            if audit[key] != 0
+        }
+
+        if failures:
+            raise RuntimeError(
+                "Operational correction contract failed: "
+                + json.dumps(
+                    failures,
+                    sort_keys=True,
+                )
+            )
+
+        (
+            directory
+            / "operational_correction_audit.json"
+        ).write_text(
+            json.dumps(
+                audit,
+                indent=2,
+            )
+        )
+
     except Exception as exc:
         failure = {
-            "utc": datetime.now(timezone.utc).isoformat(),
+            "utc": datetime.now(
+                timezone.utc
+            ).isoformat(),
             "session_id": sid,
             "contract": CORRECTION_CONTRACT,
             "error_type": type(exc).__name__,
@@ -1142,176 +1439,58 @@ def authorise(sid: str):
         }
 
         (
-            directory / "correction_failure.json"
-        ).write_text(json.dumps(failure, indent=2))
+            directory
+            / "correction_failure.json"
+        ).write_text(
+            json.dumps(
+                failure,
+                indent=2,
+            )
+        )
 
         raise HTTPException(
             status_code=500,
-            detail=f"Operational correction failed: {exc}",
+            detail=(
+                "Operational correction failed: "
+                f"{type(exc).__name__}: {exc}"
+            ),
         ) from exc
-
-    mask = result["mask"]
-    routes = result["routes"]
-    a1 = result["a1"]
-    a5 = result["a5"]
-    print_mask = result["print_mask"]
-    eligible_a5_v1 = result["eligible_a5_v1"]
-
-    write_png(
-        directory / "prepared_dilation2_mask.png",
-        mask,
-    )
-    write_png(
-        directory / "telea_diagnostic.png",
-        result["telea"],
-    )
-    write_png(
-        directory / "paper_estimate.png",
-        result["paper"],
-    )
-
-    write_png(
-        directory / "route_preserve.png",
-        routes["preserve"],
-    )
-    write_png(
-        directory / "route_remove.png",
-        routes["remove"],
-    )
-    write_png(
-        directory / "route_ambiguous.png",
-        routes["ambiguous"],
-    )
-
-    write_png(
-        directory / "a1_corrected.png",
-        a1,
-    )
-    write_png(
-        directory / "a5_eligible_ambiguous.png",
-        eligible_a5_v1,
-    )
-    write_png(
-        directory / "a5_print_mask.png",
-        print_mask,
-    )
-    write_png(
-        directory / "a5_corrected.png",
-        a5,
-    )
-    write_png(
-        directory / "a5_delta_from_a1.png",
-        a5 != a1,
-    )
-
-    np.save(
-        directory / "a5_safe_cleanup_probability.npy",
-        result["p_clean"],
-    )
-    np.save(
-        directory / "a5_safe_cleanup_provisional.npy",
-        result["provisional"],
-    )
-    np.save(
-        directory / "a5_safe_cleanup_final.npy",
-        result["final"],
-    )
-
-    outside_mask = ~mask
-    non_clean = ~print_mask
-
-    audit = {
-        "created_utc": datetime.now(timezone.utc).isoformat(),
-        "app_version": APP_VERSION,
-        "correction_contract": CORRECTION_CONTRACT,
-        "a1_policy_id": result.get(
-            "a1_policy_id",
-            A1_POLICY_ID,
-        ),
-        "a5_policy_id": result.get(
-            "a5_policy_id",
-            A5_POLICY_ID,
-        ),
-        "a5_bundle_id": result.get("bundle_id"),
-        "a5_model_sha256": result.get("model_sha256"),
-        "a5_calibrator_sha256": result.get(
-            "calibrator_sha256"
-        ),
-        "prepared_mask_pixels": int(mask.sum()),
-        "preserve_pixels": int(routes["preserve"].sum()),
-        "remove_pixels": int(routes["remove"].sum()),
-        "ambiguous_pixels": int(
-            routes["ambiguous"].sum()
-        ),
-        "a5_eligible_pixels": int(eligible_a5_v1.sum()),
-        "a5_clean_pixels": int(print_mask.sum()),
-        "a5_changed_from_a1": int(
-            np.sum(a5 != a1)
-        ),
-        "a1_outside_mask_drift": int(
-            np.sum(a1[outside_mask] != observed[outside_mask])
-        ),
-        "a5_outside_mask_drift": int(
-            np.sum(a5[outside_mask] != observed[outside_mask])
-        ),
-        "a5_non_ambiguous_regression": int(
-            np.sum(
-                a5[~routes["ambiguous"]]
-                != a1[~routes["ambiguous"]]
-            )
-        ),
-        "a5_non_clean_a1_regression": int(
-            np.sum(a5[non_clean] != a1[non_clean])
-        ),
-        "a5_clean_not_equal_paper": int(
-            np.sum(
-                a5[print_mask]
-                != result["paper"][print_mask]
-            )
-        ),
-        "telea_contributes_to_a1": False,
-        "telea_contributes_to_a5": False,
-        "historical_notebook91_drives_output": False,
-    }
-
-    if any(
-        audit[key] != 0
-        for key in [
-            "a1_outside_mask_drift",
-            "a5_outside_mask_drift",
-            "a5_non_ambiguous_regression",
-            "a5_non_clean_a1_regression",
-            "a5_clean_not_equal_paper",
-        ]
-    ):
-        raise RuntimeError(
-            f"Operational correction contract failed: {audit}"
-        )
-
-    (
-        directory / "operational_correction_audit.json"
-    ).write_text(json.dumps(audit, indent=2))
 
     return {
         "ok": True,
-        "corrected_url": f"/api/session/{sid}/result",
-        "original_url": f"/api/session/{sid}/image",
+        "corrected_url": (
+            f"/api/session/{sid}/result"
+        ),
+        "original_url": (
+            f"/api/session/{sid}/image"
+        ),
         "diagnostics": {
             "prepared_mask_pixels": audit[
                 "prepared_mask_pixels"
             ],
-            "preserve_pixels": audit["preserve_pixels"],
-            "remove_pixels": audit["remove_pixels"],
-            "ambiguous_pixels": audit["ambiguous_pixels"],
+            "preserve_pixels": audit[
+                "preserve_pixels"
+            ],
+            "remove_pixels": audit[
+                "remove_pixels"
+            ],
+            "ambiguous_pixels": audit[
+                "ambiguous_pixels"
+            ],
             "a5_eligible_pixels": audit[
                 "a5_eligible_pixels"
             ],
-            "a5_clean_pixels": audit["a5_clean_pixels"],
-            "a5_changed_from_a1": audit[
-                "a5_changed_from_a1"
+            "a5_print_pixels": audit[
+                "a5_final_print_pixels"
+            ],
+            "a5_changed_from_v7_8": audit[
+                "a5_effectively_changed_pixels"
             ],
             "outside_mask_drift": audit[
                 "a5_outside_mask_drift"
+            ],
+            "non_print_v7_8_regression": audit[
+                "a5_non_print_v7_8_regression"
             ],
         },
     }
@@ -1451,7 +1630,7 @@ def finish(sid: str):
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "version": "HF-04.5",
         "correction_contract": CORRECTION_CONTRACT,
-        "a1_policy_id": A1_POLICY_ID,
+        "v78_policy_id": V78_POLICY_ID,
         "a5_policy_id": A5_POLICY_ID,
         "training_pair": [
             "annotated_page.png",
@@ -1521,10 +1700,10 @@ def health():
         "ok": True,
         "version": APP_VERSION,
         "correction_contract": CORRECTION_CONTRACT,
-        "a1_policy_id": getattr(
+        "v78_policy_id": getattr(
             operator,
-            "a1_policy_id",
-            A1_POLICY_ID,
+            "v78_policy_id",
+            V78_POLICY_ID,
         ),
         "a5_policy_id": getattr(
             operator,
