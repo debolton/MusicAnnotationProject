@@ -701,4 +701,299 @@ document
                 );
 
                 status(
-                    `Saving whole
+                    `Saving whole-page decision: ${decision}...`
+                );
+
+                try {
+                    const response =
+                        await fetch(
+                            `/api/session/${sid}/approval`,
+                            {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type':
+                                        'application/json'
+                                },
+                                body: JSON.stringify({
+                                    status: decision,
+                                    note: $('note').value
+                                })
+                            }
+                        );
+
+                    const data =
+                        await readResponse(
+                            response
+                        );
+
+                    if (!response.ok) {
+                        status(
+                            'Whole-page decision failed: ' +
+                            describeError(
+                                data,
+                                `HTTP ${response.status}`
+                            )
+                        );
+                        return;
+                    }
+
+                    status(
+                        `Whole-page decision saved: ${data.status}.`
+                    );
+
+                    if (
+                        decision ===
+                        'return_to_mask'
+                    ) {
+                        $('review').scrollIntoView({
+                            behavior: 'smooth'
+                        });
+                    }
+
+                } catch (error) {
+                    status(
+                        'Whole-page decision failed: ' +
+                        error.message
+                    );
+                }
+            };
+        }
+    );
+
+
+/* ============================================================
+   BUILD EVIDENCE PACKAGE
+   ============================================================ */
+
+$('package').onclick = async () => {
+    /*
+     * Never expose a stale download URL while a new evidence
+     * package is being constructed.
+     */
+    $('download').hidden = true;
+    $('download').removeAttribute(
+        'href'
+    );
+
+    status(
+        'Building evidence package...'
+    );
+
+    try {
+        const response = await fetch(
+            `/api/session/${sid}/finish`,
+            {
+                method: 'POST'
+            }
+        );
+
+        const data = await readResponse(
+            response
+        );
+
+        if (!response.ok) {
+            status(
+                'Evidence packaging failed: ' +
+                describeError(
+                    data,
+                    `HTTP ${response.status}`
+                )
+            );
+            return;
+        }
+
+        if (!data.download_url) {
+            status(
+                'Evidence packaging failed: ' +
+                'server returned no download URL.'
+            );
+            return;
+        }
+
+        /*
+         * The URL returned by FastAPI is authoritative.
+         * Do not rebuild or modify it here.
+         */
+        $('download').href =
+            data.download_url;
+
+        $('download').hidden =
+            false;
+
+        const filename =
+            data.package_filename ||
+            'hf_04_5_training_and_audit.zip';
+
+        const packageBytes =
+            Number(
+                data.package_bytes
+            );
+
+        const byteText =
+            Number.isFinite(packageBytes)
+                ? ` (${packageBytes.toLocaleString()} bytes)`
+                : '';
+
+        status(
+            `Evidence package ready: ` +
+            `${filename}${byteText}.`
+        );
+
+    } catch (error) {
+        status(
+            'Evidence packaging failed: ' +
+            error.message
+        );
+    }
+};
+
+
+/* ============================================================
+   DOWNLOAD EVIDENCE PACKAGE
+   ============================================================ */
+
+$('download').onclick = async event => {
+    event.preventDefault();
+
+    /*
+     * Use the exact href supplied by /finish.
+     */
+    const url =
+        $('download').getAttribute(
+            'href'
+        );
+
+    if (!url) {
+        status(
+            'No evidence package is available to download.'
+        );
+        return;
+    }
+
+    status(
+        'Downloading evidence package...'
+    );
+
+    try {
+        const response =
+            await fetch(url);
+
+        if (!response.ok) {
+            const data =
+                await readResponse(
+                    response
+                );
+
+            status(
+                'Evidence download failed: ' +
+                describeError(
+                    data,
+                    `HTTP ${response.status}`
+                )
+            );
+
+            return;
+        }
+
+        /*
+         * FileResponse normally returns application/zip.
+         * Do not fail solely because a proxy/browser reports
+         * application/octet-stream instead.
+         */
+        const contentType =
+            response.headers.get(
+                'content-type'
+            ) || '';
+
+        if (
+            contentType &&
+            !contentType.includes(
+                'application/zip'
+            ) &&
+            !contentType.includes(
+                'application/octet-stream'
+            )
+        ) {
+            status(
+                'Evidence download failed: ' +
+                `unexpected content type ${contentType}.`
+            );
+            return;
+        }
+
+        const blob =
+            await response.blob();
+
+        if (
+            blob.size === 0
+        ) {
+            status(
+                'Evidence download failed: ' +
+                'server returned an empty file.'
+            );
+            return;
+        }
+
+        const objectUrl =
+            URL.createObjectURL(
+                blob
+            );
+
+        const temporaryLink =
+            document.createElement(
+                'a'
+            );
+
+        temporaryLink.href =
+            objectUrl;
+
+        temporaryLink.download =
+            'hf_04_5_training_and_audit.zip';
+
+        temporaryLink.style.display =
+            'none';
+
+        document.body.appendChild(
+            temporaryLink
+        );
+
+        temporaryLink.click();
+        temporaryLink.remove();
+
+        /*
+         * Delay revocation long enough for the browser to start
+         * consuming the object URL.
+         */
+        setTimeout(
+            () => {
+                URL.revokeObjectURL(
+                    objectUrl
+                );
+            },
+            1000
+        );
+
+        status(
+            `Evidence package downloaded ` +
+            `(${blob.size.toLocaleString()} bytes).`
+        );
+
+    } catch (error) {
+        status(
+            'Evidence download failed: ' +
+            error.message
+        );
+    }
+};
+
+
+/* ============================================================
+   INITIAL UI STATE
+   ============================================================ */
+
+setMode('pan');
+
+$('download').hidden = true;
+$('download').removeAttribute(
+    'href'
+);
