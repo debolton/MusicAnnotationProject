@@ -1,5 +1,12 @@
 import cv2,numpy as np,pandas as pd
-MASK_DILATION=2;CROP_MARGIN=48;MIN_COMPONENT_AREA=20;GEOMETRY_THRESHOLD=80;BAND_WIDTH=4;CONTEXT_RING_RADIUS=18
+
+MASK_DILATION=2
+CROP_MARGIN=48
+MIN_COMPONENT_AREA=20
+GEOMETRY_THRESHOLD=80
+BAND_WIDTH=0; #Think this is picking up something weird.  Change from 4 to 0 on 26.11.26
+CONTEXT_RING_RADIUS=18
+
 def immutable(original,candidate,mask):
  out=original.copy();out[mask>0]=candidate[mask>0];assert np.array_equal(out[mask==0],original[mask==0]);return out
 def prepare_mask(seed,dilation=MASK_DILATION):
@@ -34,7 +41,8 @@ def support_maps(obs,mask):
  for i in range(1,n):
   x,y,w,hg,a=stats[i]
   if 3<=a<=650 and w<=40 and hg<=40:c[lab==i]=True
- k=np.ones((2*BAND_WIDTH+1,2*BAND_WIDTH+1),np.uint8);return cv2.dilate(h.astype(np.uint8),k)>0,cv2.dilate(v.astype(np.uint8),k)>0,cv2.dilate(c.astype(np.uint8),k)>0
+ k=np.ones((2*BAND_WIDTH+1,2*BAND_WIDTH+1),np.uint8);
+ return cv2.dilate(h.astype(np.uint8),k)>0,cv2.dilate(v.astype(np.uint8),k)>0,cv2.dilate(c.astype(np.uint8),k)>0
 def geometry_t80(obs,mask,telea):
  paper=background_surface(obs,mask);norm=cv2.divide(obs,np.maximum(paper,1),scale=255);horizontal,vertical,compact=support_maps(obs,mask);m=mask>0;preserve=m&(horizontal|vertical|compact)&(obs<200);remove=m&~preserve&(obs>=GEOMETRY_THRESHOLD)&(norm>=GEOMETRY_THRESHOLD);ambiguous=m&~preserve&~remove;result=obs.copy();result[remove]=paper[remove];result[ambiguous]=telea[ambiguous];result[preserve]=obs[preserve];return immutable(obs,result,mask),{'preserve':preserve,'remove':remove,'ambiguous':ambiguous,'horizontal':horizontal,'vertical':vertical,'compact':compact,'paper':paper,'normalised':norm}
 def features(obs,component,routes):
