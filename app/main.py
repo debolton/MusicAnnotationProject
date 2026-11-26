@@ -227,7 +227,7 @@ def read_session_png(sid: str, filename: str) -> np.ndarray:
 def a5_decision_overlay(
     observed: np.ndarray,
     final: np.ndarray,
-    eligible: np.ndarray,
+    eligible_a5_v1: np.ndarray,
     alpha: float = 0.55,
     display_radius: int = 1,
 ) -> np.ndarray:
@@ -256,28 +256,28 @@ def a5_decision_overlay(
             f"final={final.shape}"
         )
 
-    eligible = np.asarray(
-        eligible,
+    eligible_a5_v1 = np.asarray(
+        eligible_a5_v1,
         dtype=bool,
     )
 
-    if eligible.shape != observed.shape:
+    if eligible_a5_v1.shape != observed.shape:
         raise RuntimeError(
             "A5 decision-overlay eligibility shape mismatch"
         )
 
     print_mask = (
-        eligible
+        eligible_a5_v1
         & (final == "PRINT")
     )
 
     annotation_mask = (
-        eligible
+        eligible_a5_v1
         & (final == "ANNOTATION")
     )
 
     uncertain_mask = (
-        eligible
+        eligible_a5_v1
         & (final == "UNCERTAIN")
     )
 
@@ -1271,7 +1271,7 @@ def authorise(sid: str):
         a5 = result["a5"]
 
         print_mask = result["print_mask"]
-        eligible = result["eligible_a5_v1"]
+        eligible_a5_v1 = result["eligible_a5_v1"]
 
         p_print = result["p_print"]
         provisional = result["provisional"]
@@ -1280,7 +1280,7 @@ def authorise(sid: str):
         decision_overlay = a5_decision_overlay(
             observed=observed,
             final=final,
-            eligible=eligible_a5_v1,
+            eligible_a5_v1=eligible_a5_v1,
             alpha=0.55,
             display_radius=1,
         )
@@ -1357,13 +1357,13 @@ def authorise(sid: str):
 
         write_png(
             directory / "a5_eligible.png",
-            eligible,
+            eligible_a5_v1,
         )
 
         # Compatibility alias for any existing frontend route.
         write_png(
             directory / "a5_eligible_ambiguous.png",
-            eligible,
+            eligible_a5_v1,
         )
 
         write_png(
@@ -1448,7 +1448,7 @@ def authorise(sid: str):
             ),
 
             "a5_eligible_pixels": int(
-                eligible.sum()
+                eligible_a5_v1.sum()
             ),
             "a5_final_print_pixels": int(
                 print_mask.sum()
@@ -1459,13 +1459,13 @@ def authorise(sid: str):
 
             "a5_final_annotation_pixels": int(
                 np.sum(
-                    final[eligible]
+                    final[eligible_a5_v1]
                     == "ANNOTATION"
                 )
             ),
             "a5_final_uncertain_pixels": int(
                 np.sum(
-                    final[eligible]
+                    final[eligible_a5_v1]
                     == "UNCERTAIN"
                 )
             ),
@@ -1523,7 +1523,7 @@ def authorise(sid: str):
             "print_outside_eligibility": int(
                 np.sum(
                     print_mask
-                    & ~eligible
+                    & ~eligible_a5_v1
                 )
             ),
 
