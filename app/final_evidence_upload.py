@@ -26,14 +26,14 @@ EVIDENCE_SCHEMA_VERSION = 2
 # Hugging Face namespace, for example: debolton
 HF_S3_NAMESPACE = os.environ.get(
     "HF_S3_NAMESPACE",
-    "",
+    "debolton",
 ).strip()
 
 # Bare bucket name only, for example: MusicAnnotationProject-storage
 # Do not include the namespace and do not use s3://.
 HF_EVIDENCE_BUCKET = os.environ.get(
     "HF_EVIDENCE_BUCKET",
-    "",
+    "MusicAnnotationProject-storage",
 ).strip()
 
 # S3 credentials generated from the dropdown for a write-enabled HF token.
@@ -49,7 +49,7 @@ HF_S3_SECRET_ACCESS_KEY = os.environ.get(
 
 HF_S3_ENDPOINT_URL = os.environ.get(
     "HF_S3_ENDPOINT_URL",
-    "",
+    "https://debolton.s3.hf.co",
 ).strip()
 
 HF_S3_REGION = os.environ.get(
