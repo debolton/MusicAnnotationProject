@@ -6,6 +6,7 @@ import csv
 import hashlib
 import io
 import json
+import shutil
 import stat
 import zipfile
 
@@ -36,16 +37,29 @@ def _sha256_bytes(value: bytes) -> str:
 
 
 def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
+    digest = hashlib.sha256()
 
-    with path.open("rb") as file:
+    with path.open("rb") as stream:
         for block in iter(
-            lambda: file.read(1024 * 1024),
+            lambda: stream.read(1024 * 1024),
             b"",
         ):
-            h.update(block)
+            digest.update(block)
 
-    return h.hexdigest()
+    return digest.hexdigest()
+
+
+def _array_sha256(value) -> str:
+    array = np.ascontiguousarray(
+        np.asarray(value)
+    )
+
+    digest = hashlib.sha256()
+    digest.update(str(array.dtype).encode("utf-8"))
+    digest.update(str(array.shape).encode("utf-8"))
+    digest.update(array.tobytes())
+
+    return digest.hexdigest()
 
 
 def _safe_members(
@@ -69,7 +83,7 @@ def _safe_members(
             "ZIP uncompressed size exceeds the batch limit"
         )
 
-    seen_paths = set()
+    seen_paths: set[str] = set()
 
     for item in members:
         raw_name = item.filename
@@ -123,9 +137,7 @@ def _safe_members(
 
         seen_paths.add(normalised_path)
 
-        unix_mode = (
-            item.external_attr >> 16
-        )
+        unix_mode = item.external_attr >> 16
 
         if stat.S_ISLNK(unix_mode):
             raise BatchFailure(
@@ -153,7 +165,7 @@ def _safe_members(
 
 def _role(
     path: PurePosixPath,
-):
+) -> str | None:
     parts = [
         part.lower()
         for part in path.parts
@@ -188,21 +200,6 @@ def _role(
 
     if stem.endswith(mask_suffixes):
         return "mask"
-
-    observed_directories = {
-        "observed",
-        "annotated",
-        "annotated_pages",
-        "images",
-        "pages",
-        "input",
-    }
-
-    if any(
-        part in observed_directories
-        for part in parts[:-1]
-    ):
-        return "observed"
 
     return "observed"
 
@@ -293,11 +290,18 @@ def _write_png(
 
     value = np.asarray(array)
 
+    if value.ndim != 2:
+        raise BatchFailure(
+            "Could not write non-two-dimensional PNG array: "
+            f"{path.name}, shape={value.shape}"
+        )
+
     if value.dtype == bool:
         value = (
             value.astype(np.uint8)
             * 255
         )
+
     elif value.dtype != np.uint8:
         if not np.issubdtype(
             value.dtype,
@@ -329,6 +333,34 @@ def _write_png(
         raise BatchFailure(
             f"Could not write PNG: {path.name}"
         )
+
+
+def _json_safe(value):
+    if isinstance(
+        value,
+        (
+            np.integer,
+            np.floating,
+        ),
+    ):
+        return value.item()
+
+    if isinstance(
+        value,
+        np.bool_,
+    ):
+        return bool(value)
+
+    if isinstance(
+        value,
+        Path,
+    ):
+        return str(value)
+
+    raise TypeError(
+        f"Object of type {type(value).__name__} "
+        "is not JSON serialisable"
+    )
 
 
 def _require_result_fields(
@@ -422,7 +454,10 @@ def _require_bool_page(
     )
 
     if (
-        np.issubdtype(array.dtype, np.number)
+        np.issubdtype(
+            array.dtype,
+            np.number,
+        )
         and not np.isfinite(array).all()
     ):
         raise BatchFailure(
@@ -437,18 +472,173 @@ def _require_bool_page(
 def _normalise_seed(
     seed: np.ndarray,
 ) -> np.ndarray:
-    return np.where(
-        np.asarray(seed) > 0,
-        255,
-        0,
-    ).astype(np.uint8)
+    return np.ascontiguousarray(
+        np.where(
+            np.asarray(seed) > 0,
+            255,
+            0,
+        ).astype(np.uint8)
+    )
+
+
+def _normalise_decision_map(
+    value,
+    name: str,
+    shape: tuple[int, int],
+    page: str,
+) -> np.ndarray:
+    array = _require_shape(
+        value,
+        name,
+        shape,
+        page,
+    )
+
+    if np.issubdtype(
+        array.dtype,
+        np.number,
+    ):
+        if not np.isfinite(array).all():
+            raise BatchFailure(
+                f"{page}: {name} contains non-finite values"
+            )
+
+        mapping = {
+            0: "ANNOTATION",
+            1: "PRINT",
+            2: "UNCERTAIN",
+        }
+
+        integer = array.astype(np.int64)
+
+        unknown = sorted(
+            set(integer.ravel().tolist())
+            - set(mapping)
+        )
+
+        if unknown:
+            raise BatchFailure(
+                f"{page}: {name} contains unknown "
+                f"numeric classes: {unknown}"
+            )
+
+        result = np.asarray(
+            [
+                mapping[int(item)]
+                for item in integer.ravel()
+            ],
+            dtype=object,
+        ).reshape(shape)
+
+    else:
+        result = np.char.upper(
+            array.astype(str)
+        ).astype(object)
+
+    allowed = {
+        "PRINT",
+        "ANNOTATION",
+        "UNCERTAIN",
+        "INELIGIBLE",
+    }
+
+    unexpected = sorted(
+        set(result.ravel().tolist())
+        - allowed
+    )
+
+    if unexpected:
+        raise BatchFailure(
+            f"{page}: {name} contains unexpected "
+            f"classes: {unexpected}"
+        )
+
+    return result
+
+
+def _decision_visual(
+    provisional: np.ndarray,
+    final: np.ndarray,
+    eligible: np.ndarray,
+) -> np.ndarray:
+    visual = np.zeros(
+        eligible.shape,
+        dtype=np.uint8,
+    )
+
+    visual[
+        eligible
+        & (
+            final == "ANNOTATION"
+        )
+    ] = 85
+
+    visual[
+        eligible
+        & (
+            final == "UNCERTAIN"
+        )
+    ] = 170
+
+    visual[
+        eligible
+        & (
+            final == "PRINT"
+        )
+    ] = 255
+
+    demoted = (
+        eligible
+        & (
+            provisional == "PRINT"
+        )
+        & (
+            final != "PRINT"
+        )
+    )
+
+    visual[demoted] = 210
+
+    return visual
+
+
+def _write_audit_json(
+    path: Path,
+    value: dict,
+) -> None:
+    path.write_text(
+        json.dumps(
+            value,
+            indent=2,
+            sort_keys=True,
+            default=_json_safe,
+        ),
+        encoding="utf-8",
+    )
 
 
 def run_batch(
     upload: bytes,
+    a1_operator,
     operator,
     output_root: Path,
 ) -> Path:
+    """
+    Run the operational correction lineage:
+
+        A1Operator.run()
+            -> frozen V7.8
+            -> frozen V8.9
+            -> Notebook 87 A1
+
+        A5Operator.run_from_a1()
+            -> A5 with Notebook 87 A1 as the exact
+               non-PRINT fallback
+
+    Packaging is fail-closed. A partial ZIP is never returned.
+    The uncompressed run directory is retained if processing fails.
+    """
+
     if not upload:
         raise BatchFailure(
             "Uploaded ZIP is empty"
@@ -459,16 +649,36 @@ def run_batch(
             "Uploaded ZIP exceeds the batch limit"
         )
 
+    if a1_operator is None:
+        raise BatchFailure(
+            "A1 operator is not initialised"
+        )
+
+    if not callable(
+        getattr(
+            a1_operator,
+            "run",
+            None,
+        )
+    ):
+        raise BatchFailure(
+            "A1 operator does not provide run()"
+        )
+
     if operator is None:
         raise BatchFailure(
             "A5 operator is not initialised"
         )
 
     if not callable(
-        getattr(operator, "run", None)
+        getattr(
+            operator,
+            "run_from_a1",
+            None,
+        )
     ):
         raise BatchFailure(
-            "A5 operator does not provide run()"
+            "A5 operator does not provide run_from_a1()"
         )
 
     output_root = Path(output_root)
@@ -485,15 +695,8 @@ def run_batch(
         + "_hf045"
     )
 
-    run = (
-        output_root
-        / run_id
-    )
-
-    pages_dir = (
-        run
-        / "pages"
-    )
+    run = output_root / run_id
+    pages_dir = run / "pages"
 
     run.mkdir(
         parents=True,
@@ -502,12 +705,17 @@ def run_batch(
 
     pages_dir.mkdir()
 
+    input_zip_sha256 = _sha256_bytes(
+        upload
+    )
+
     try:
         try:
             archive = zipfile.ZipFile(
                 io.BytesIO(upload),
                 "r",
             )
+
         except zipfile.BadZipFile as exc:
             raise BatchFailure(
                 "Uploaded file is not a valid ZIP archive"
@@ -530,6 +738,7 @@ def run_batch(
 
                 try:
                     data = archive.read(item)
+
                 except Exception as exc:
                     raise BatchFailure(
                         "Could not read ZIP member: "
@@ -562,8 +771,8 @@ def run_batch(
                 "ZIP contains no supported image files"
             )
 
-        observed_records = {}
-        mask_records = {}
+        observed_records: dict[str, dict] = {}
+        mask_records: dict[str, dict] = {}
 
         for record in records:
             target = (
@@ -611,16 +820,11 @@ def run_batch(
                 f"missing masks={missing_masks[:20]}"
             )
 
-        summary_rows = []
+        summary_rows: list[dict] = []
 
         for key in keys:
-            observed_record = (
-                observed_records[key]
-            )
-
-            mask_record = (
-                mask_records[key]
-            )
+            observed_record = observed_records[key]
+            mask_record = mask_records[key]
 
             observed = _decode_gray(
                 observed_record["data"],
@@ -641,12 +845,20 @@ def run_batch(
             seed = _normalise_seed(seed)
 
             try:
-                result = operator.run(
+                a1_result = a1_operator.run(
                     observed=observed,
                     reviewed_seed=seed,
                     page=key,
+                )
+
+                result = operator.run_from_a1(
+                    observed=observed,
+                    reviewed_seed=seed,
+                    a1_result=a1_result,
+                    page=key,
                     batch=512,
                 )
+
             except Exception as exc:
                 raise BatchFailure(
                     f"{key}: operator processing failed: "
@@ -657,8 +869,10 @@ def run_batch(
                 "mask",
                 "telea",
                 "paper",
+                "normalised",
                 "routes",
                 "geometry_t80",
+                "v8_9_corrected",
                 "a1",
                 "a5",
                 "eligible_a5_v1",
@@ -697,6 +911,13 @@ def run_batch(
                 key,
             )
 
+            normalised = _require_uint8_page(
+                result["normalised"],
+                "normalised observed page",
+                shape,
+                key,
+            )
+
             geometry_t80 = _require_uint8_page(
                 result["geometry_t80"],
                 "frozen V7.8 geometry_t80",
@@ -704,9 +925,9 @@ def run_batch(
                 key,
             )
 
-            a5 = _require_uint8_page(
-                result["a5"],
-                "frozen A5-v1 page",
+            v8_9_corrected = _require_uint8_page(
+                result["v8_9_corrected"],
+                "frozen V8.9 corrected page",
                 shape,
                 key,
             )
@@ -714,6 +935,13 @@ def run_batch(
             a1 = _require_uint8_page(
                 result["a1"],
                 "Notebook 87 A1 page",
+                shape,
+                key,
+            )
+
+            a5 = _require_uint8_page(
+                result["a5"],
+                "frozen A5-v1 page",
                 shape,
                 key,
             )
@@ -739,14 +967,45 @@ def run_batch(
                 key,
             )
 
-            provisional = _require_shape(
+            if not np.issubdtype(
+                p_print.dtype,
+                np.number,
+            ):
+                raise BatchFailure(
+                    f"{key}: p_print is not numeric"
+                )
+
+            if np.any(
+                ~np.isfinite(
+                    p_print[eligible]
+                )
+            ):
+                raise BatchFailure(
+                    f"{key}: eligible p_print values "
+                    "contain non-finite values"
+                )
+
+            if (
+                np.any(
+                    p_print[eligible] < 0.0
+                )
+                or np.any(
+                    p_print[eligible] > 1.0
+                )
+            ):
+                raise BatchFailure(
+                    f"{key}: eligible p_print values "
+                    "lie outside 0..1"
+                )
+
+            provisional = _normalise_decision_map(
                 result["provisional"],
                 "A5-v1 provisional decisions",
                 shape,
                 key,
             )
 
-            final = _require_shape(
+            final = _normalise_decision_map(
                 result["final"],
                 "A5-v1 final decisions",
                 shape,
@@ -848,6 +1107,128 @@ def run_batch(
                     f"outside={escaped_route}"
                 )
 
+            expected_eligible = (
+                authority
+                & (
+                    observed < 200
+                )
+                & ~preserve
+            )
+
+            if not np.array_equal(
+                eligible,
+                expected_eligible,
+            ):
+                missing_eligible = int(
+                    np.sum(
+                        expected_eligible
+                        & ~eligible
+                    )
+                )
+
+                unexpected_eligible = int(
+                    np.sum(
+                        eligible
+                        & ~expected_eligible
+                    )
+                )
+
+                raise BatchFailure(
+                    f"{key}: A5 eligibility differs from "
+                    "the frozen candidate rule: "
+                    f"missing={missing_eligible}, "
+                    f"unexpected={unexpected_eligible}"
+                )
+
+            expected_print_mask = (
+                eligible
+                & (
+                    final == "PRINT"
+                )
+            )
+
+            if not np.array_equal(
+                print_mask,
+                expected_print_mask,
+            ):
+                missing_print = int(
+                    np.sum(
+                        expected_print_mask
+                        & ~print_mask
+                    )
+                )
+
+                unexpected_print = int(
+                    np.sum(
+                        print_mask
+                        & ~expected_print_mask
+                    )
+                )
+
+                raise BatchFailure(
+                    f"{key}: PRINT mask differs from final "
+                    "PRINT decisions: "
+                    f"missing={missing_print}, "
+                    f"unexpected={unexpected_print}"
+                )
+
+            if np.any(
+                provisional[~eligible]
+                != "INELIGIBLE"
+            ):
+                raise BatchFailure(
+                    f"{key}: provisional decisions exist "
+                    "outside A5 eligibility"
+                )
+
+            if np.any(
+                final[~eligible]
+                != "INELIGIBLE"
+            ):
+                raise BatchFailure(
+                    f"{key}: final decisions exist "
+                    "outside A5 eligibility"
+                )
+
+            if np.any(
+                final[eligible]
+                == "INELIGIBLE"
+            ):
+                raise BatchFailure(
+                    f"{key}: eligible coordinates contain "
+                    "INELIGIBLE final decisions"
+                )
+
+            if np.any(
+                (
+                    final == "PRINT"
+                )
+                & (
+                    provisional != "PRINT"
+                )
+            ):
+                raise BatchFailure(
+                    f"{key}: run filtering created a new "
+                    "PRINT decision"
+                )
+
+            if np.any(
+                (
+                    provisional == "ANNOTATION"
+                )
+                & (
+                    final != "ANNOTATION"
+                )
+            ):
+                raise BatchFailure(
+                    f"{key}: run filtering altered an "
+                    "ANNOTATION decision"
+                )
+
+            # --------------------------------------------------
+            # Frozen V7.8 and V8.9 stage integrity
+            # --------------------------------------------------
+
             if np.any(
                 geometry_t80[~authority]
                 != observed[~authority]
@@ -855,6 +1236,110 @@ def run_batch(
                 raise BatchFailure(
                     f"{key}: V7.8 has outside-mask drift"
                 )
+
+            if np.any(
+                telea[~authority]
+                != observed[~authority]
+            ):
+                raise BatchFailure(
+                    f"{key}: Telea has outside-mask drift"
+                )
+
+            if np.any(
+                v8_9_corrected[~authority]
+                != observed[~authority]
+            ):
+                raise BatchFailure(
+                    f"{key}: V8.9 has outside-mask drift"
+                )
+
+            # --------------------------------------------------
+            # Notebook 87 A1 contract
+            # --------------------------------------------------
+
+            if np.any(
+                a1[ambiguous]
+                != observed[ambiguous]
+            ):
+                raise BatchFailure(
+                    f"{key}: A1 AMBIGUOUS bytes do not "
+                    "equal observed"
+                )
+
+            if np.any(
+                a1[~ambiguous]
+                != v8_9_corrected[~ambiguous]
+            ):
+                raise BatchFailure(
+                    f"{key}: A1 differs from V8.9 outside "
+                    "the V7.8 AMBIGUOUS route"
+                )
+
+            if np.any(
+                a1[~authority]
+                != observed[~authority]
+            ):
+                raise BatchFailure(
+                    f"{key}: A1 changed pixels outside "
+                    "the authoritative mask"
+                )
+
+            a1_changed_from_v89 = (
+                a1 != v8_9_corrected
+            )
+
+            expected_a1_changed_from_v89 = (
+                ambiguous
+                & (
+                    observed
+                    != v8_9_corrected
+                )
+            )
+
+            if not np.array_equal(
+                a1_changed_from_v89,
+                expected_a1_changed_from_v89,
+            ):
+                unexpected = int(
+                    np.sum(
+                        a1_changed_from_v89
+                        & ~expected_a1_changed_from_v89
+                    )
+                )
+
+                missing = int(
+                    np.sum(
+                        expected_a1_changed_from_v89
+                        & ~a1_changed_from_v89
+                    )
+                )
+
+                raise BatchFailure(
+                    f"{key}: A1 delta from V8.9 does not "
+                    "equal effective AMBIGUOUS-to-observed "
+                    "restoration: "
+                    f"unexpected={unexpected}, "
+                    f"missing={missing}"
+                )
+
+            if np.any(
+                a1_changed_from_v89
+                & (
+                    a1 != observed
+                )
+            ):
+                raise BatchFailure(
+                    f"{key}: an A1 changed byte does not "
+                    "equal observed"
+                )
+
+            a1_changed_from_v78 = (
+                a1 != geometry_t80
+            )
+
+            # --------------------------------------------------
+            # A5-from-A1 contract
+            # --------------------------------------------------
 
             if np.any(
                 print_mask
@@ -876,11 +1361,11 @@ def run_batch(
 
             if np.any(
                 a5[~print_mask]
-                != geometry_t80[~print_mask]
+                != a1[~print_mask]
             ):
                 raise BatchFailure(
-                    f"{key}: A5 differs from V7.8 "
-                    "outside PRINT"
+                    f"{key}: A5 differs from Notebook 87 A1 "
+                    "outside final PRINT"
                 )
 
             if np.any(
@@ -901,49 +1386,46 @@ def run_batch(
                     "the authoritative mask"
                 )
 
-            a5_changed = (
-                a5
-                != geometry_t80
+            a5_changed_from_a1 = (
+                a5 != a1
             )
 
-            expected_a5_changed = (
+            expected_a5_changed_from_a1 = (
                 print_mask
                 & (
-                    observed
-                    != geometry_t80
+                    observed != a1
                 )
             )
 
             if not np.array_equal(
-                a5_changed,
-                expected_a5_changed,
+                a5_changed_from_a1,
+                expected_a5_changed_from_a1,
             ):
                 unexpected = int(
                     np.sum(
-                        a5_changed
-                        & ~expected_a5_changed
+                        a5_changed_from_a1
+                        & ~expected_a5_changed_from_a1
                     )
                 )
 
                 missing = int(
                     np.sum(
-                        expected_a5_changed
-                        & ~a5_changed
+                        expected_a5_changed_from_a1
+                        & ~a5_changed_from_a1
                     )
                 )
 
                 raise BatchFailure(
-                    f"{key}: A5 delta does not equal "
+                    f"{key}: A5 delta from A1 does not equal "
                     "effective PRINT restoration: "
                     f"unexpected={unexpected}, "
                     f"missing={missing}"
                 )
 
             if np.any(
-                a5_changed
+                a5_changed_from_a1
                 & (
-                    a5
-                    != observed
+                    a5 != observed
                 )
             ):
                 raise BatchFailure(
@@ -951,86 +1433,56 @@ def run_batch(
                     "equal observed"
                 )
 
-            if np.any(
-                a1[ambiguous]
-                != observed[ambiguous]
-            ):
-                raise BatchFailure(
-                    f"{key}: A1 AMBIGUOUS bytes do not "
-                    "equal observed"
-                )
-
-            if np.any(
-                a1[~ambiguous]
-                != a5[~ambiguous]
-            ):
-                raise BatchFailure(
-                    f"{key}: A1 differs from A5 outside "
-                    "the AMBIGUOUS route"
-                )
-
-            if np.any(
-                a1[~authority]
-                != observed[~authority]
-            ):
-                raise BatchFailure(
-                    f"{key}: A1 changed pixels outside "
-                    "the authoritative mask"
-                )
-
-            a1_changed_from_a5 = (
-                a1
-                != a5
+            a5_changed_from_v78 = (
+                a5 != geometry_t80
             )
 
-            expected_a1_changed_from_a5 = (
-                ambiguous
-                & (
-                    observed
-                    != a5
+            provisional_print = int(
+                np.sum(
+                    provisional == "PRINT"
                 )
             )
 
-            if not np.array_equal(
-                a1_changed_from_a5,
-                expected_a1_changed_from_a5,
-            ):
-                unexpected = int(
-                    np.sum(
-                        a1_changed_from_a5
-                        & ~expected_a1_changed_from_a5
+            final_print = int(
+                np.sum(
+                    final == "PRINT"
+                )
+            )
+
+            run_demotions = int(
+                np.sum(
+                    (
+                        provisional == "PRINT"
+                    )
+                    & (
+                        final != "PRINT"
                     )
                 )
+            )
 
-                missing = int(
-                    np.sum(
-                        expected_a1_changed_from_a5
-                        & ~a1_changed_from_a5
+            effective_print_changes = int(
+                a5_changed_from_a1.sum()
+            )
+
+            ineffective_print_decisions = int(
+                np.sum(
+                    print_mask
+                    & (
+                        observed == a1
                     )
                 )
-
-                raise BatchFailure(
-                    f"{key}: A1 delta from A5 does not equal "
-                    "effective AMBIGUOUS-to-observed "
-                    "restoration: "
-                    f"unexpected={unexpected}, "
-                    f"missing={missing}"
-                )
-
-            a1_changed_from_v78 = (
-                a1
-                != geometry_t80
             )
 
-            out = (
-                pages_dir
-                / key
-            )
+            out = pages_dir / key
 
             out.mkdir(
                 parents=False,
                 exist_ok=False,
             )
+
+            # --------------------------------------------------
+            # Input and authoritative-mask artefacts
+            # --------------------------------------------------
 
             _write_png(
                 out / "observed.png",
@@ -1038,7 +1490,8 @@ def run_batch(
             )
 
             _write_png(
-                out / "reviewed_authoritative_seed_mask.png",
+                out
+                / "reviewed_authoritative_seed_mask.png",
                 seed,
             )
 
@@ -1046,6 +1499,10 @@ def run_batch(
                 out / "prepared_dilation2_mask.png",
                 authority,
             )
+
+            # --------------------------------------------------
+            # Upstream reconstruction evidence
+            # --------------------------------------------------
 
             _write_png(
                 out / "telea_diagnostic.png",
@@ -1055,6 +1512,11 @@ def run_batch(
             _write_png(
                 out / "paper_estimate.png",
                 paper,
+            )
+
+            _write_png(
+                out / "normalised_observed.png",
+                normalised,
             )
 
             _write_png(
@@ -1072,9 +1534,40 @@ def run_batch(
                 ambiguous,
             )
 
+            # --------------------------------------------------
+            # Correction lineage
+            # --------------------------------------------------
+
+            _write_png(
+                out / "v7_8_corrected.png",
+                geometry_t80,
+            )
+
+            _write_png(
+                out / "v8_9_corrected.png",
+                v8_9_corrected,
+            )
+
+            _write_png(
+                out / "a1_corrected.png",
+                a1,
+            )
+
+            _write_png(
+                out / "a5_corrected.png",
+                a5,
+            )
+
+            # Compatibility filenames for existing consumers.
+
             _write_png(
                 out / "v7_8_geometry_t80.png",
                 geometry_t80,
+            )
+
+            _write_png(
+                out / "a1_notebook87.png",
+                a1,
             )
 
             _write_png(
@@ -1082,9 +1575,18 @@ def run_batch(
                 a5,
             )
 
+            # --------------------------------------------------
+            # A1 and A5 masks/deltas
+            # --------------------------------------------------
+
             _write_png(
-                out / "a1_notebook87.png",
-                a1,
+                out / "a1_delta_from_v8_9.png",
+                a1_changed_from_v89,
+            )
+
+            _write_png(
+                out / "a1_delta_from_v7_8.png",
+                a1_changed_from_v78,
             )
 
             _write_png(
@@ -1098,19 +1600,27 @@ def run_batch(
             )
 
             _write_png(
+                out / "a5_delta_from_a1.png",
+                a5_changed_from_a1,
+            )
+
+            _write_png(
                 out / "a5_delta_from_v7_8.png",
-                a5_changed,
+                a5_changed_from_v78,
             )
 
             _write_png(
-                out / "a1_delta_from_a5.png",
-                a1_changed_from_a5,
+                out / "a5_decision_map.png",
+                _decision_visual(
+                    provisional=provisional,
+                    final=final,
+                    eligible=eligible,
+                ),
             )
 
-            _write_png(
-                out / "a1_delta_from_v7_8.png",
-                a1_changed_from_v78,
-            )
+            # --------------------------------------------------
+            # Numeric decision artefacts
+            # --------------------------------------------------
 
             np.save(
                 out / "a5_print_probability.npy",
@@ -1129,32 +1639,9 @@ def run_batch(
                 allow_pickle=True,
             )
 
-            provisional_print = int(
-                np.sum(
-                    provisional
-                    == "PRINT"
-                )
-            )
-
-            final_print = int(
-                np.sum(
-                    final
-                    == "PRINT"
-                )
-            )
-
-            run_demotions = int(
-                np.sum(
-                    (
-                        provisional
-                        == "PRINT"
-                    )
-                    & (
-                        final
-                        != "PRINT"
-                    )
-                )
-            )
+            # --------------------------------------------------
+            # Page audit
+            # --------------------------------------------------
 
             audit = {
                 "page": key,
@@ -1177,6 +1664,13 @@ def run_batch(
                     ambiguous.sum()
                 ),
 
+                "a1_changed_from_v8_9_pixels": int(
+                    a1_changed_from_v89.sum()
+                ),
+                "a1_changed_from_v7_8_pixels": int(
+                    a1_changed_from_v78.sum()
+                ),
+
                 "a5_eligible_pixels": int(
                     eligible.sum()
                 ),
@@ -1189,18 +1683,18 @@ def run_batch(
                 "a5_print_mask_pixels": int(
                     print_mask.sum()
                 ),
-                "a5_run_demotions": (
-                    run_demotions
+                "a5_run_demotions": run_demotions,
+                "a5_effective_changed_from_a1_pixels": (
+                    effective_print_changes
+                ),
+                "a5_ineffective_print_decisions": (
+                    ineffective_print_decisions
+                ),
+                "a5_changed_from_a1_pixels": int(
+                    a5_changed_from_a1.sum()
                 ),
                 "a5_changed_from_v7_8_pixels": int(
-                    a5_changed.sum()
-                ),
-
-                "a1_changed_from_a5_pixels": int(
-                    a1_changed_from_a5.sum()
-                ),
-                "a1_changed_from_v7_8_pixels": int(
-                    a1_changed_from_v78.sum()
+                    a5_changed_from_v78.sum()
                 ),
 
                 "v7_8_outside_mask_drift": int(
@@ -1209,31 +1703,16 @@ def run_batch(
                         != observed[~authority]
                     )
                 ),
-                "a5_outside_mask_drift": int(
+                "telea_outside_mask_drift": int(
                     np.sum(
-                        a5[~authority]
+                        telea[~authority]
                         != observed[~authority]
                     )
                 ),
-                "a5_non_print_v7_8_regression": int(
+                "v8_9_outside_mask_drift": int(
                     np.sum(
-                        a5[~print_mask]
-                        != geometry_t80[~print_mask]
-                    )
-                ),
-                "a5_print_not_equal_observed": int(
-                    np.sum(
-                        a5[print_mask]
-                        != observed[print_mask]
-                    )
-                ),
-                "a5_changed_byte_not_equal_observed": int(
-                    np.sum(
-                        a5_changed
-                        & (
-                            a5
-                            != observed
-                        )
+                        v8_9_corrected[~authority]
+                        != observed[~authority]
                     )
                 ),
 
@@ -1243,10 +1722,10 @@ def run_batch(
                         != observed[ambiguous]
                     )
                 ),
-                "a1_non_ambiguous_regression_from_a5": int(
+                "a1_non_ambiguous_v89_regression": int(
                     np.sum(
                         a1[~ambiguous]
-                        != a5[~ambiguous]
+                        != v8_9_corrected[~ambiguous]
                     )
                 ),
                 "a1_outside_mask_drift": int(
@@ -1255,38 +1734,176 @@ def run_batch(
                         != observed[~authority]
                     )
                 ),
+                "a1_delta_from_v89_unexpected": int(
+                    np.sum(
+                        a1_changed_from_v89
+                        & ~expected_a1_changed_from_v89
+                    )
+                ),
+                "a1_delta_from_v89_missing": int(
+                    np.sum(
+                        expected_a1_changed_from_v89
+                        & ~a1_changed_from_v89
+                    )
+                ),
+                "a1_changed_byte_not_equal_observed": int(
+                    np.sum(
+                        a1_changed_from_v89
+                        & (
+                            a1 != observed
+                        )
+                    )
+                ),
 
-                "a5_policy_id": result.get(
-                    "a5_policy_id"
+                "a5_outside_mask_drift": int(
+                    np.sum(
+                        a5[~authority]
+                        != observed[~authority]
+                    )
                 ),
-                "a5_bundle_id": result.get(
-                    "bundle_id"
+                "a5_non_print_a1_regression": int(
+                    np.sum(
+                        a5[~print_mask]
+                        != a1[~print_mask]
+                    )
                 ),
-                "a5_model_sha256": result.get(
-                    "model_sha256"
+                "a5_print_not_equal_observed": int(
+                    np.sum(
+                        a5[print_mask]
+                        != observed[print_mask]
+                    )
                 ),
-                "a5_calibrator_sha256": result.get(
-                    "calibrator_sha256"
+                "a5_delta_from_a1_unexpected": int(
+                    np.sum(
+                        a5_changed_from_a1
+                        & ~expected_a5_changed_from_a1
+                    )
+                ),
+                "a5_delta_from_a1_missing": int(
+                    np.sum(
+                        expected_a5_changed_from_a1
+                        & ~a5_changed_from_a1
+                    )
+                ),
+                "a5_changed_byte_not_equal_observed": int(
+                    np.sum(
+                        a5_changed_from_a1
+                        & (
+                            a5 != observed
+                        )
+                    )
+                ),
+
+                "observed_array_sha256": _array_sha256(
+                    observed
+                ),
+                "seed_array_sha256": _array_sha256(
+                    seed
+                ),
+                "authority_array_sha256": _array_sha256(
+                    authority
+                ),
+                "v7_8_array_sha256": _array_sha256(
+                    geometry_t80
+                ),
+                "v8_9_array_sha256": _array_sha256(
+                    v8_9_corrected
+                ),
+                "a1_array_sha256": _array_sha256(
+                    a1
+                ),
+                "a5_array_sha256": _array_sha256(
+                    a5
+                ),
+                "a5_print_mask_array_sha256": _array_sha256(
+                    print_mask
+                ),
+
+                "a1_policy_id": result.get(
+                    "a1_policy_id",
+                    getattr(
+                        a1_operator,
+                        "a1_policy_id",
+                        None,
+                    ),
+                ),
+                "v89_operator_sha256": result.get(
+                    "v89_operator_sha256",
+                    getattr(
+                        a1_operator,
+                        "v89_operator_sha256",
+                        None,
+                    ),
                 ),
                 "a1_assembly": result.get(
                     "a1_assembly",
                     (
-                        "A5_V1_CORRECTED_THEN_V78_"
-                        "AMBIGUOUS_RESTORED_TO_"
-                        "EXACT_OBSERVED"
+                        "FROZEN_V8_9_CORRECTED_THEN_ALL_"
+                        "FROZEN_V7_8_AMBIGUOUS_COORDINATES_"
+                        "RESTORED_TO_EXACT_OBSERVED"
                     ),
+                ),
+
+                "a5_policy_id": result.get(
+                    "a5_policy_id",
+                    getattr(
+                        operator,
+                        "a5_policy_id",
+                        None,
+                    ),
+                ),
+                "a5_bundle_id": result.get(
+                    "bundle_id",
+                    getattr(
+                        operator,
+                        "bundle_id",
+                        None,
+                    ),
+                ),
+                "a5_model_sha256": result.get(
+                    "model_sha256",
+                    getattr(
+                        operator,
+                        "model_sha256",
+                        None,
+                    ),
+                ),
+                "a5_calibrator_sha256": result.get(
+                    "calibrator_sha256",
+                    getattr(
+                        operator,
+                        "calibrator_sha256",
+                        None,
+                    ),
+                ),
+                "a5_action": result.get(
+                    "a5_action",
+                    "COPY_EXACT_OBSERVED_BYTE",
+                ),
+                "a5_fallback": result.get(
+                    "a5_fallback",
+                    "Notebook87 A1",
                 ),
             }
 
             zero_fields = [
                 "v7_8_outside_mask_drift",
-                "a5_outside_mask_drift",
-                "a5_non_print_v7_8_regression",
-                "a5_print_not_equal_observed",
-                "a5_changed_byte_not_equal_observed",
+                "telea_outside_mask_drift",
+                "v8_9_outside_mask_drift",
+
                 "a1_ambiguous_not_equal_observed",
-                "a1_non_ambiguous_regression_from_a5",
+                "a1_non_ambiguous_v89_regression",
                 "a1_outside_mask_drift",
+                "a1_delta_from_v89_unexpected",
+                "a1_delta_from_v89_missing",
+                "a1_changed_byte_not_equal_observed",
+
+                "a5_outside_mask_drift",
+                "a5_non_print_a1_regression",
+                "a5_print_not_equal_observed",
+                "a5_delta_from_a1_unexpected",
+                "a5_delta_from_a1_missing",
+                "a5_changed_byte_not_equal_observed",
             ]
 
             failures = {
@@ -1301,21 +1918,12 @@ def run_batch(
                     f"contract failed: {failures}"
                 )
 
-            (
-                out
-                / "page_audit.json"
-            ).write_text(
-                json.dumps(
-                    audit,
-                    indent=2,
-                    sort_keys=True,
-                ),
-                encoding="utf-8",
+            _write_audit_json(
+                out / "page_audit.json",
+                audit,
             )
 
-            summary_rows.append(
-                audit
-            )
+            summary_rows.append(audit)
 
         if not summary_rows:
             raise BatchFailure(
@@ -1331,45 +1939,78 @@ def run_batch(
             summary_rows[0].keys()
         )
 
+        for row in summary_rows[1:]:
+            if list(row.keys()) != fieldnames:
+                raise BatchFailure(
+                    "Page audit schemas differ between pages"
+                )
+
         with summary_path.open(
             "w",
             newline="",
             encoding="utf-8",
-        ) as file:
+        ) as stream:
             writer = csv.DictWriter(
-                file,
+                stream,
                 fieldnames=fieldnames,
                 extrasaction="raise",
             )
 
             writer.writeheader()
-            writer.writerows(
-                summary_rows
-            )
+            writer.writerows(summary_rows)
 
         manifest = {
             "version": "HF-04.5",
             "created_utc": (
-                datetime.now(timezone.utc).isoformat()
+                datetime.now(
+                    timezone.utc
+                ).isoformat()
             ),
             "pages": len(summary_rows),
 
-            "policy_id": getattr(
+            "a1_policy_id": getattr(
+                a1_operator,
+                "a1_policy_id",
+                None,
+            ),
+            "v89_operator_sha256": getattr(
+                a1_operator,
+                "v89_operator_sha256",
+                None,
+            ),
+            "p_print_bundle_root": str(
+                getattr(
+                    a1_operator,
+                    "p_print_bundle_root",
+                    "",
+                )
+            )
+            or None,
+            "remove_bundle_root": str(
+                getattr(
+                    a1_operator,
+                    "remove_bundle_root",
+                    "",
+                )
+            )
+            or None,
+
+            "a5_policy_id": getattr(
                 operator,
                 "a5_policy_id",
                 None,
             ),
-            "bundle_id": getattr(
+            "a5_bundle_id": getattr(
                 operator,
                 "bundle_id",
                 None,
             ),
-            "model_sha256": getattr(
+            "a5_model_sha256": getattr(
                 operator,
                 "model_sha256",
                 None,
             ),
-            "calibrator_sha256": getattr(
+            "a5_calibrator_sha256": getattr(
                 operator,
                 "calibrator_sha256",
                 None,
@@ -1379,37 +2020,61 @@ def run_batch(
                 "model_output_0": "ANNOTATION",
                 "model_output_1": "PRINT",
                 "truth_code_2": "UNCERTAIN",
+                "ineligible": "INELIGIBLE",
                 "probability": "p_print",
             },
 
             "implementation": (
-                "A5Operator.run once per page; "
-                "frozen V7.8 geometry_t80; "
-                "frozen A5-v1 observed-PRINT; "
-                "Notebook 87 A1 assembly"
+                "A1Operator.run once per page, followed by "
+                "A5Operator.run_from_a1; frozen V7.8; "
+                "frozen V8.9; Notebook 87 A1; "
+                "A5-v1 observed-PRINT processing"
             ),
 
             "page_lineage": {
-                "v7_8_geometry_t80": (
-                    "PRESERVE copies observed; "
-                    "REMOVE uses paper estimate; "
-                    "AMBIGUOUS uses Telea"
+                "v7_8": (
+                    "Frozen geometry_t80 baseline: PRESERVE "
+                    "copies observed, REMOVE uses the paper "
+                    "estimate and AMBIGUOUS uses Telea"
                 ),
-                "a5_v1": (
-                    "Frozen V7.8 except final PRINT "
-                    "coordinates, which copy exact "
-                    "observed bytes"
+                "v8_9": (
+                    "Frozen V8.9 corrected page generated "
+                    "from the frozen V7.8 preparation"
                 ),
                 "a1_notebook87": (
-                    "A5-v1 with every frozen V7.8 "
-                    "AMBIGUOUS coordinate restored to "
-                    "the exact observed byte"
+                    "Frozen V8.9 corrected page with every "
+                    "frozen V7.8 AMBIGUOUS coordinate "
+                    "restored to the exact observed byte"
+                ),
+                "a5_v1": (
+                    "Notebook 87 A1 everywhere except final "
+                    "A5 PRINT coordinates, which copy the "
+                    "exact observed byte"
                 ),
             },
 
-            "input_zip_sha256": _sha256_bytes(
-                upload
-            ),
+            "integrity_contract": {
+                "outside_authoritative_mask": (
+                    "EXACT_OBSERVED_BYTE"
+                ),
+                "a1_outside_v7_8_ambiguous": (
+                    "EXACT_FROZEN_V8_9_BYTE"
+                ),
+                "a1_at_v7_8_ambiguous": (
+                    "EXACT_OBSERVED_BYTE"
+                ),
+                "a5_outside_final_print": (
+                    "EXACT_NOTEBOOK87_A1_BYTE"
+                ),
+                "a5_at_final_print": (
+                    "EXACT_OBSERVED_BYTE"
+                ),
+                "every_a5_changed_byte": (
+                    "EXACT_OBSERVED_BYTE"
+                ),
+            },
+
+            "input_zip_sha256": input_zip_sha256,
             "input_zip_bytes": len(upload),
             "summary_sha256": _sha256_file(
                 summary_path
@@ -1429,6 +2094,7 @@ def run_batch(
 
             "fail_closed": True,
             "partial_zip_permitted": False,
+            "failed_run_directory_retained": True,
         }
 
         manifest_path = (
@@ -1436,14 +2102,83 @@ def run_batch(
             / "batch_manifest.json"
         )
 
-        manifest_path.write_text(
-            json.dumps(
-                manifest,
-                indent=2,
-                sort_keys=True,
-            ),
-            encoding="utf-8",
+        _write_audit_json(
+            manifest_path,
+            manifest,
         )
+
+        # ------------------------------------------------------
+        # Package inventory
+        # ------------------------------------------------------
+
+        inventory_rows = []
+
+        for path in sorted(
+            run.rglob("*")
+        ):
+            if not path.is_file():
+                continue
+
+            inventory_rows.append(
+                {
+                    "relative_path": str(
+                        path.relative_to(run)
+                    ),
+                    "bytes": path.stat().st_size,
+                    "sha256": _sha256_file(path),
+                }
+            )
+
+        inventory_path = (
+            run
+            / "package_inventory.csv"
+        )
+
+        with inventory_path.open(
+            "w",
+            newline="",
+            encoding="utf-8",
+        ) as stream:
+            writer = csv.DictWriter(
+                stream,
+                fieldnames=[
+                    "relative_path",
+                    "bytes",
+                    "sha256",
+                ],
+            )
+
+            writer.writeheader()
+            writer.writerows(inventory_rows)
+
+        # Re-write the manifest after the inventory exists so the
+        # final manifest records the complete package inventory.
+
+        manifest["package_inventory_sha256"] = (
+            _sha256_file(
+                inventory_path
+            )
+        )
+
+        manifest["package_inventory_files"] = len(
+            inventory_rows
+        )
+
+        manifest["package_inventory_bytes"] = int(
+            sum(
+                row["bytes"]
+                for row in inventory_rows
+            )
+        )
+
+        _write_audit_json(
+            manifest_path,
+            manifest,
+        )
+
+        # ------------------------------------------------------
+        # Atomic ZIP creation
+        # ------------------------------------------------------
 
         zip_path = (
             output_root
@@ -1473,7 +2208,9 @@ def run_batch(
 
                     output_archive.write(
                         path,
-                        path.relative_to(run),
+                        str(
+                            path.relative_to(run)
+                        ),
                     )
 
             if not temporary_zip.is_file():
@@ -1486,6 +2223,56 @@ def run_batch(
                 raise BatchFailure(
                     "Batch ZIP creation produced an empty file"
                 )
+
+            # Validate the temporary ZIP before publishing it.
+
+            with zipfile.ZipFile(
+                temporary_zip,
+                "r",
+            ) as verification_archive:
+                bad_member = (
+                    verification_archive.testzip()
+                )
+
+                if bad_member is not None:
+                    raise BatchFailure(
+                        "Batch ZIP integrity test failed at "
+                        f"{bad_member}"
+                    )
+
+                packaged_names = {
+                    item.filename
+                    for item
+                    in verification_archive.infolist()
+                    if not item.is_dir()
+                }
+
+                expected_names = {
+                    str(
+                        path.relative_to(run)
+                    )
+                    for path
+                    in run.rglob("*")
+                    if path.is_file()
+                }
+
+                if packaged_names != expected_names:
+                    missing_package_files = sorted(
+                        expected_names
+                        - packaged_names
+                    )
+
+                    unexpected_package_files = sorted(
+                        packaged_names
+                        - expected_names
+                    )
+
+                    raise BatchFailure(
+                        "Batch ZIP file roster mismatch: "
+                        f"missing={missing_package_files[:20]}, "
+                        f"unexpected="
+                        f"{unexpected_package_files[:20]}"
+                    )
 
             temporary_zip.replace(
                 zip_path
@@ -1503,11 +2290,16 @@ def run_batch(
                 "the final output ZIP"
             )
 
+        if zip_path.stat().st_size == 0:
+            raise BatchFailure(
+                "Batch completed with an empty final ZIP"
+            )
+
         return zip_path
 
     except BatchFailure:
         # Keep the run directory for forensic examination.
-        # No partial ZIP is returned.
+        # Never return a partial ZIP.
         raise
 
     except Exception as exc:

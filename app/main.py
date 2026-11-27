@@ -20,11 +20,8 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from tempfile import TemporaryDirectory
-from typing import Final
-from starlette.background import BackgroundTask
-
 from . import store, yolo
+from .a1_operator import A1Operator
 from .a5_operator import A5Operator
 from .hf045_batch import BatchFailure, run_batch
 
@@ -33,8 +30,9 @@ from .hf045_batch import BatchFailure, run_batch
 # Application identity and paths
 # ---------------------------------------------------------------------------
 
-APP_VERSION = "4.5.0"
-CORRECTION_CONTRACT = "frozen-v7.8-plus-a5-v1-observed-print"
+APP_VERSION = "4.5.1"
+CORRECTION_CONTRACT = "frozen-v8.9-notebook87-a1-plus-a5-v1"
+A1_POLICY_ID = "Notebook87-A1-from-frozen-V8.9"
 V78_POLICY_ID = "V7.8-geometry-t80"
 A5_POLICY_ID = "A5-v1-print-p0980-margin0960-run2"
 
@@ -47,6 +45,7 @@ STARTUP_EVIDENCE_DIR = ROOT / "startup_evidence"
 BATCH_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 _model = None
+_a1_operator = None
 _correction_operator = None
 
 app = FastAPI(title="HF-04.5 Music Annotation")
@@ -95,6 +94,15 @@ def get_model():
 
     return _model
 
+def get_a1_operator() -> A1Operator:
+    global _a1_operator
+
+    if _a1_operator is None:
+        _a1_operator = A1Operator(
+            device=get_device(),
+        )
+
+    return _a1_operator
 
 def get_correction_operator() -> A5Operator:
     global _correction_operator
@@ -403,23 +411,22 @@ def validate_operational_result(
     result: dict,
 ) -> dict:
     """
-    Validate the frozen V7.8 + A5-v1 observed-PRINT contract.
+    Validate the operational lineage:
 
-    Frozen V7.8 baseline:
-        PRESERVE  -> observed
-        REMOVE    -> paper
-        AMBIGUOUS -> Telea
+        V7.8 geometry_t80
+            -> frozen V8.9 corrected
+            -> Notebook 87 A1
+            -> A5-v1 final page
 
-    Frozen A5-v1:
-        eligible population:
-            authoritative mask
-            AND observed < 200
-            AND NOT V7.8 PRESERVE
+    Notebook 87 A1:
+
+        A1 = frozen V8.9 corrected
+        A1[V7.8 AMBIGUOUS] = observed[V7.8 AMBIGUOUS]
+
+    A5-v1:
 
         PRINT      -> exact observed byte
-        ANNOTATION -> exact V7.8 baseline
-        UNCERTAIN  -> exact V7.8 baseline
-
+        non-PRINT  -> exact A1 byte
         outside authoritative mask -> exact observed byte
     """
 
@@ -429,6 +436,8 @@ def validate_operational_result(
         "paper",
         "routes",
         "geometry_t80",
+        "v8_9_corrected",
+        "a1",
         "a5",
         "eligible_a5_v1",
         "p_print",
@@ -443,7 +452,7 @@ def validate_operational_result(
 
     if missing:
         raise RuntimeError(
-            "Correction operator omitted required fields: "
+            "Operational result omitted required fields: "
             f"{missing}"
         )
 
@@ -451,43 +460,55 @@ def validate_operational_result(
 
     mask = require_bool_mask(
         result["mask"],
-        "mask",
+        "authoritative mask",
         shape,
     )
 
     telea = require_image(
         result["telea"],
-        "telea",
+        "Telea diagnostic",
         shape,
     )
 
     paper = require_image(
         result["paper"],
-        "paper",
+        "paper estimate",
         shape,
     )
 
-    baseline = require_image(
+    geometry_t80 = require_image(
         result["geometry_t80"],
-        "geometry_t80",
+        "V7.8 geometry_t80",
+        shape,
+    )
+
+    v8_9_corrected = require_image(
+        result["v8_9_corrected"],
+        "frozen V8.9 corrected page",
+        shape,
+    )
+
+    a1 = require_image(
+        result["a1"],
+        "Notebook 87 A1",
         shape,
     )
 
     a5 = require_image(
         result["a5"],
-        "a5",
+        "A5-v1 corrected page",
         shape,
     )
 
     eligible_a5_v1 = require_bool_mask(
         result["eligible_a5_v1"],
-        "eligible_a5_v1",
+        "A5-v1 eligibility",
         shape,
     )
 
     print_mask = require_bool_mask(
         result["print_mask"],
-        "print_mask",
+        "A5-v1 PRINT mask",
         shape,
     )
 
@@ -498,63 +519,57 @@ def validate_operational_result(
             "result['routes'] must be a dictionary"
         )
 
-    route_names = {
+    required_routes = {
         "preserve",
         "remove",
         "ambiguous",
     }
 
     missing_routes = sorted(
-        route_names - set(routes)
+        required_routes - set(routes)
     )
 
     if missing_routes:
         raise RuntimeError(
-            "Correction operator omitted routes: "
+            "Operational result omitted V7.8 routes: "
             f"{missing_routes}"
         )
 
     preserve = require_bool_mask(
         routes["preserve"],
-        "route preserve",
+        "V7.8 PRESERVE",
         shape,
     )
 
     remove = require_bool_mask(
         routes["remove"],
-        "route remove",
+        "V7.8 REMOVE",
         shape,
     )
 
     ambiguous = require_bool_mask(
         routes["ambiguous"],
-        "route ambiguous",
+        "V7.8 AMBIGUOUS",
         shape,
     )
 
     # ------------------------------------------------------------
-    # Frozen V7.8 route integrity
+    # V7.8 integrity
     # ------------------------------------------------------------
 
-    if np.any(
-        preserve & remove
-    ):
+    if np.any(preserve & remove):
         raise RuntimeError(
-            "PRESERVE and REMOVE routes overlap"
+            "V7.8 PRESERVE and REMOVE overlap"
         )
 
-    if np.any(
-        preserve & ambiguous
-    ):
+    if np.any(preserve & ambiguous):
         raise RuntimeError(
-            "PRESERVE and AMBIGUOUS routes overlap"
+            "V7.8 PRESERVE and AMBIGUOUS overlap"
         )
 
-    if np.any(
-        remove & ambiguous
-    ):
+    if np.any(remove & ambiguous):
         raise RuntimeError(
-            "REMOVE and AMBIGUOUS routes overlap"
+            "V7.8 REMOVE and AMBIGUOUS overlap"
         )
 
     routed = (
@@ -567,63 +582,97 @@ def validate_operational_result(
         routed,
         mask,
     ):
-        missing_route = int(
-            np.sum(
-                mask & ~routed
-            )
-        )
-
-        escaped_route = int(
-            np.sum(
-                routed & ~mask
-            )
-        )
-
         raise RuntimeError(
             "V7.8 routes do not exactly partition "
-            "the prepared mask: "
-            f"missing={missing_route}, "
-            f"outside={escaped_route}"
+            "the authoritative mask"
         )
 
-    # ------------------------------------------------------------
-    # Frozen V7.8 output contract
-    # ------------------------------------------------------------
-
     if np.any(
-        baseline[preserve]
+        geometry_t80[preserve]
         != observed[preserve]
     ):
         raise RuntimeError(
-            "V7.8 PRESERVE does not reproduce observed bytes"
+            "V7.8 PRESERVE does not equal observed"
         )
 
     if np.any(
-        baseline[remove]
+        geometry_t80[remove]
         != paper[remove]
     ):
         raise RuntimeError(
-            "V7.8 REMOVE does not reproduce paper bytes"
+            "V7.8 REMOVE does not equal paper"
         )
 
     if np.any(
-        baseline[ambiguous]
+        geometry_t80[ambiguous]
         != telea[ambiguous]
     ):
         raise RuntimeError(
-            "V7.8 AMBIGUOUS does not reproduce Telea bytes"
+            "V7.8 AMBIGUOUS does not equal Telea"
         )
 
     if np.any(
-        baseline[~mask]
+        geometry_t80[~mask]
         != observed[~mask]
     ):
         raise RuntimeError(
-            "V7.8 changed pixels outside the prepared mask"
+            "V7.8 changed pixels outside authority"
         )
 
     # ------------------------------------------------------------
-    # Frozen A5-v1 candidate population
+    # Notebook 87 A1 integrity
+    # ------------------------------------------------------------
+
+    if np.any(
+        a1[ambiguous]
+        != observed[ambiguous]
+    ):
+        raise RuntimeError(
+            "Notebook 87 A1 AMBIGUOUS bytes do not "
+            "equal observed"
+        )
+
+    if np.any(
+        a1[~ambiguous]
+        != v8_9_corrected[~ambiguous]
+    ):
+        raise RuntimeError(
+            "Notebook 87 A1 differs from frozen V8.9 "
+            "outside AMBIGUOUS"
+        )
+
+    if np.any(
+        a1[~mask]
+        != observed[~mask]
+    ):
+        raise RuntimeError(
+            "Notebook 87 A1 changed pixels outside "
+            "the authoritative mask"
+        )
+
+    a1_delta_from_v89 = (
+        a1 != v8_9_corrected
+    )
+
+    expected_a1_delta = (
+        ambiguous
+        & (
+            observed
+            != v8_9_corrected
+        )
+    )
+
+    if not np.array_equal(
+        a1_delta_from_v89,
+        expected_a1_delta,
+    ):
+        raise RuntimeError(
+            "Notebook 87 A1 delta is not exactly the "
+            "effective AMBIGUOUS-to-observed restoration"
+        )
+
+    # ------------------------------------------------------------
+    # A5 eligibility
     # ------------------------------------------------------------
 
     expected_eligible = (
@@ -636,36 +685,20 @@ def validate_operational_result(
         eligible_a5_v1,
         expected_eligible,
     ):
-        missing_eligible = int(
-            np.sum(
-                expected_eligible
-                & ~eligible_a5_v1
-            )
-        )
-
-        unexpected_eligible = int(
-            np.sum(
-                eligible_a5_v1
-                & ~expected_eligible
-            )
-        )
-
         raise RuntimeError(
-            "A5-v1 eligible population mismatch: "
-            f"missing={missing_eligible}, "
-            f"unexpected={unexpected_eligible}"
+            "A5-v1 eligible population mismatch"
         )
 
     if np.any(
-        print_mask & ~eligible_a5_v1
+        print_mask
+        & ~eligible_a5_v1
     ):
         raise RuntimeError(
-            "A5-v1 PRINT exists outside the "
-            "eligible population"
+            "A5-v1 PRINT exists outside eligibility"
         )
 
     # ------------------------------------------------------------
-    # Frozen A5-v1 output contract
+    # A5 output, now falling back to A1
     # ------------------------------------------------------------
 
     if np.any(
@@ -673,17 +706,16 @@ def validate_operational_result(
         != observed[print_mask]
     ):
         raise RuntimeError(
-            "A5-v1 PRINT output does not equal "
-            "the exact observed byte"
+            "A5-v1 PRINT output does not equal observed"
         )
 
     if np.any(
         a5[~print_mask]
-        != baseline[~print_mask]
+        != a1[~print_mask]
     ):
         raise RuntimeError(
-            "A5-v1 non-PRINT output differs "
-            "from frozen V7.8"
+            "A5-v1 non-PRINT output differs from "
+            "Notebook 87 A1"
         )
 
     if np.any(
@@ -691,74 +723,69 @@ def validate_operational_result(
         != observed[~mask]
     ):
         raise RuntimeError(
-            "A5-v1 changed pixels outside "
-            "the authoritative mask"
+            "A5-v1 changed pixels outside authority"
         )
 
-    changed = (
-        a5 != baseline
+    changed_from_a1 = (
+        a5 != a1
     )
 
-    expected_changed = (
+    expected_changed_from_a1 = (
         print_mask
-        & (observed != baseline)
+        & (
+            observed != a1
+        )
     )
 
     if not np.array_equal(
-        changed,
-        expected_changed,
+        changed_from_a1,
+        expected_changed_from_a1,
     ):
-        unexpected_changes = int(
-            np.sum(
-                changed
-                & ~expected_changed
-            )
-        )
-
-        missing_changes = int(
-            np.sum(
-                expected_changed
-                & ~changed
-            )
-        )
-
         raise RuntimeError(
-            "A5-v1 page delta does not equal "
-            "effective PRINT restoration: "
-            f"unexpected={unexpected_changes}, "
-            f"missing={missing_changes}"
+            "A5-v1 delta does not equal effective PRINT "
+            "restoration from A1"
         )
 
     if np.any(
-        changed
+        changed_from_a1
         & (a5 != observed)
     ):
         raise RuntimeError(
-            "A5-v1 changed byte does not "
-            "equal observed"
+            "A5-v1 changed byte does not equal observed"
         )
 
     # ------------------------------------------------------------
-    # Probability and decision arrays
+    # Probability and decision integrity
     # ------------------------------------------------------------
 
     p_print = np.asarray(
         result["p_print"]
     )
 
-    if p_print.shape != shape:
-        raise RuntimeError(
-            "p_print shape mismatch: "
-            f"expected {shape}, "
-            f"found {p_print.shape}"
-        )
+    provisional = np.asarray(
+        result["provisional"]
+    )
+
+    final = np.asarray(
+        result["final"]
+    )
+
+    for name, array in (
+        ("p_print", p_print),
+        ("provisional", provisional),
+        ("final", final),
+    ):
+        if array.shape != shape:
+            raise RuntimeError(
+                f"{name} shape mismatch: "
+                f"expected {shape}, found {array.shape}"
+            )
 
     if not np.isfinite(
         p_print[eligible_a5_v1]
     ).all():
         raise RuntimeError(
-            "p_print contains non-finite values "
-            "at eligible coordinates"
+            "p_print contains non-finite eligible values"
         )
 
     if np.any(
@@ -770,26 +797,6 @@ def validate_operational_result(
             "p_print lies outside 0..1"
         )
 
-    provisional = np.asarray(
-        result["provisional"]
-    )
-
-    final = np.asarray(
-        result["final"]
-    )
-
-    if provisional.shape != shape:
-        raise RuntimeError(
-            "Provisional decision array "
-            f"shape mismatch: {provisional.shape}"
-        )
-
-    if final.shape != shape:
-        raise RuntimeError(
-            "Final decision array "
-            f"shape mismatch: {final.shape}"
-        )
-
     valid_classes = {
         "PRINT",
         "ANNOTATION",
@@ -797,112 +804,51 @@ def validate_operational_result(
         "INELIGIBLE",
     }
 
-    provisional_classes = set(
-        provisional.astype(str).ravel()
-    )
-
-    final_classes = set(
-        final.astype(str).ravel()
-    )
-
-    unexpected_provisional = (
-        provisional_classes
-        - valid_classes
-    )
-
-    unexpected_final = (
-        final_classes
-        - valid_classes
-    )
-
-    if unexpected_provisional:
-        raise RuntimeError(
-            "Unexpected provisional A5-v1 classes: "
-            f"{sorted(unexpected_provisional)}"
-        )
-
-    if unexpected_final:
-        raise RuntimeError(
-            "Unexpected final A5-v1 classes: "
-            f"{sorted(unexpected_final)}"
-        )
-
-    # Every eligible coordinate must have a real decision.
-    if np.any(
-        provisional[eligible_a5_v1]
-        == "INELIGIBLE"
+    for name, decisions in (
+        ("provisional", provisional),
+        ("final", final),
     ):
-        raise RuntimeError(
-            "Eligible A5-v1 coordinate has no "
-            "provisional decision"
+        unexpected = (
+            set(decisions.astype(str).ravel())
+            - valid_classes
         )
 
-    if np.any(
-        final[eligible_a5_v1]
-        == "INELIGIBLE"
-    ):
-        raise RuntimeError(
-            "Eligible A5-v1 coordinate has no "
-            "final decision"
-        )
+        if unexpected:
+            raise RuntimeError(
+                f"Unexpected {name} classes: "
+                f"{sorted(unexpected)}"
+            )
 
-    # Every non-eligible coordinate must remain outside the
-    # classifier population.
-    if np.any(
-        provisional[~eligible_a5_v1]
-        != "INELIGIBLE"
-    ):
-        raise RuntimeError(
-            "A5-v1 provisional decision exists "
-            "outside eligibility"
-        )
+        if np.any(
+            decisions[eligible_a5_v1]
+            == "INELIGIBLE"
+        ):
+            raise RuntimeError(
+                f"Eligible coordinate is {name} INELIGIBLE"
+            )
 
-    if np.any(
-        final[~eligible_a5_v1]
-        != "INELIGIBLE"
-    ):
-        raise RuntimeError(
-            "A5-v1 final decision exists "
-            "outside eligibility"
-        )
-
-    expected_print_mask = (
-        final == "PRINT"
-    )
+        if np.any(
+            decisions[~eligible_a5_v1]
+            != "INELIGIBLE"
+        ):
+            raise RuntimeError(
+                f"{name} decision exists outside eligibility"
+            )
 
     if not np.array_equal(
         print_mask,
-        expected_print_mask,
+        final == "PRINT",
     ):
-        missing_print = int(
-            np.sum(
-                expected_print_mask
-                & ~print_mask
-            )
-        )
-
-        unexpected_print = int(
-            np.sum(
-                print_mask
-                & ~expected_print_mask
-            )
-        )
-
         raise RuntimeError(
-            "A5-v1 PRINT mask does not equal "
-            "final PRINT decisions: "
-            f"missing={missing_print}, "
-            f"unexpected={unexpected_print}"
+            "PRINT mask does not equal final PRINT decisions"
         )
 
-    # Run filtering may demote PRINT to UNCERTAIN.
-    # It must not manufacture a new PRINT decision.
     if np.any(
         (final == "PRINT")
         & (provisional != "PRINT")
     ):
         raise RuntimeError(
-            "A5-v1 run filter created a new PRINT decision"
+            "Run filter manufactured a new PRINT decision"
         )
 
     if np.any(
@@ -910,14 +856,10 @@ def validate_operational_result(
         & (final != "ANNOTATION")
     ):
         raise RuntimeError(
-            "A5-v1 run filter altered "
-            "an ANNOTATION decision"
+            "Run filter altered an ANNOTATION decision"
         )
 
-    # ------------------------------------------------------------
-    # Normalised result returned to main.py
-    # ------------------------------------------------------------
-
+    # Preserve each real processing stage. Do not overwrite A1.
     result["mask"] = mask
     result["telea"] = telea
     result["paper"] = paper
@@ -929,19 +871,18 @@ def validate_operational_result(
         "ambiguous": ambiguous,
     }
 
-    result["geometry_t80"] = baseline
-    result["a1"] = baseline
+    result["geometry_t80"] = geometry_t80
+    result["v8_9_corrected"] = v8_9_corrected
+    result["a1"] = a1
     result["a5"] = a5
 
     result["eligible_a5_v1"] = eligible_a5_v1
-
     result["p_print"] = p_print
     result["provisional"] = provisional
     result["final"] = final
     result["print_mask"] = print_mask
 
     return result
-
 
 # ---------------------------------------------------------------------------
 # UI endpoints
@@ -1280,9 +1221,29 @@ def authorise(sid: str):
     )
 
     try:
-        result = get_correction_operator().run(
+        # --------------------------------------------------------
+        # Exact Notebook 87 A1 lineage:
+        #
+        # reviewed seed
+        #   -> frozen V8.9
+        #   -> restore V7.8 AMBIGUOUS coordinates to observed
+        #   -> Notebook 87 A1
+        # --------------------------------------------------------
+
+        a1_result = get_a1_operator().run(
             observed=observed,
             reviewed_seed=reviewed_seed,
+            page=sid,
+        )
+
+        # --------------------------------------------------------
+        # A5-v1 operates from Notebook 87 A1.
+        # --------------------------------------------------------
+
+        result = get_correction_operator().run_from_a1(
+            observed=observed,
+            reviewed_seed=reviewed_seed,
+            a1_result=a1_result,
             page=sid,
         )
 
@@ -1294,7 +1255,9 @@ def authorise(sid: str):
         mask = result["mask"]
         routes = result["routes"]
 
-        baseline = result["geometry_t80"]
+        geometry_t80 = result["geometry_t80"]
+        v8_9_corrected = result["v8_9_corrected"]
+        a1 = result["a1"]
         a5 = result["a5"]
 
         print_mask = result["print_mask"]
@@ -1304,6 +1267,47 @@ def authorise(sid: str):
         provisional = result["provisional"]
         final = result["final"]
 
+        preserve = routes["preserve"]
+        remove = routes["remove"]
+        ambiguous = routes["ambiguous"]
+
+        outside_mask = ~mask
+        non_print = ~print_mask
+
+        # --------------------------------------------------------
+        # Stage deltas
+        # --------------------------------------------------------
+
+        a1_delta_from_v89 = (
+            a1 != v8_9_corrected
+        )
+
+        expected_a1_delta_from_v89 = (
+            ambiguous
+            & (
+                observed != v8_9_corrected
+            )
+        )
+
+        a5_changed_from_a1 = (
+            a5 != a1
+        )
+
+        expected_a5_changed_from_a1 = (
+            print_mask
+            & (
+                observed != a1
+            )
+        )
+
+        a5_changed_from_v78 = (
+            a5 != geometry_t80
+        )
+
+        # --------------------------------------------------------
+        # Decision overlay
+        # --------------------------------------------------------
+
         decision_overlay = a5_decision_overlay(
             observed=observed,
             final=final,
@@ -1312,24 +1316,8 @@ def authorise(sid: str):
             display_radius=1,
         )
 
-        preserve = routes["preserve"]
-        remove = routes["remove"]
-        ambiguous = routes["ambiguous"]
-
-        outside_mask = ~mask
-        non_print = ~print_mask
-
-        changed = (
-            a5 != baseline
-        )
-
-        expected_changed = (
-            print_mask
-            & (observed != baseline)
-        )
-
         # --------------------------------------------------------
-        # Persist canonical V7.8 evidence
+        # Persist V7.8 evidence
         # --------------------------------------------------------
 
         write_png(
@@ -1358,28 +1346,36 @@ def authorise(sid: str):
         )
 
         write_png(
-            directory / "a5_decision_overlay.png",
-            decision_overlay,
-        )
-
-        write_png(
             directory / "route_ambiguous.png",
             ambiguous,
         )
 
         write_png(
             directory / "v7_8_corrected.png",
-            baseline,
-        )
-
-        # Compatibility alias for the existing UI/package.
-        write_png(
-            directory / "a1_corrected.png",
-            baseline,
+            geometry_t80,
         )
 
         # --------------------------------------------------------
-        # Persist frozen A5-v1 evidence
+        # Persist V8.9 / Notebook 87 A1 evidence
+        # --------------------------------------------------------
+
+        write_png(
+            directory / "v8_9_corrected.png",
+            v8_9_corrected,
+        )
+
+        write_png(
+            directory / "a1_corrected.png",
+            a1,
+        )
+
+        write_png(
+            directory / "a1_delta_from_v8_9.png",
+            a1_delta_from_v89,
+        )
+
+        # --------------------------------------------------------
+        # Persist A5-v1 evidence
         # --------------------------------------------------------
 
         write_png(
@@ -1387,7 +1383,7 @@ def authorise(sid: str):
             eligible_a5_v1,
         )
 
-        # Compatibility alias for any existing frontend route.
+        # Legacy compatibility alias.
         write_png(
             directory / "a5_eligible_ambiguous.png",
             eligible_a5_v1,
@@ -1404,14 +1400,18 @@ def authorise(sid: str):
         )
 
         write_png(
-            directory / "a5_delta_from_v7_8.png",
-            changed,
+            directory / "a5_delta_from_a1.png",
+            a5_changed_from_a1,
         )
 
-        # Compatibility alias for the existing frontend/package.
         write_png(
-            directory / "a5_delta_from_a1.png",
-            changed,
+            directory / "a5_delta_from_v7_8.png",
+            a5_changed_from_v78,
+        )
+
+        write_png(
+            directory / "a5_decision_overlay.png",
+            decision_overlay,
         )
 
         np.save(
@@ -1432,56 +1432,115 @@ def authorise(sid: str):
         )
 
         # --------------------------------------------------------
-        # Whole-page integrity audit
+        # Whole-page operational audit
         # --------------------------------------------------------
 
         audit = {
             "created_utc": (
                 datetime.now(timezone.utc).isoformat()
             ),
+
             "session_id": sid,
             "app_version": APP_VERSION,
             "correction_contract": CORRECTION_CONTRACT,
 
+            # ----------------------------------------------------
+            # V7.8 identity
+            # ----------------------------------------------------
+
+            "v7_8_policy_id": V78_POLICY_ID,
             "v7_8_baseline": "geometry_t80",
-            "a5_action": "COPY_EXACT_OBSERVED_BYTE",
-            "a5_fallback": "geometry_t80",
+
+            # ----------------------------------------------------
+            # Notebook 87 A1 identity
+            # ----------------------------------------------------
+
+            "a1_policy_id": result.get(
+                "a1_policy_id",
+                A1_POLICY_ID,
+            ),
+
+            "v89_operator_sha256": result.get(
+                "v89_operator_sha256",
+            ),
+
+            "a1_source": (
+                "frozen/v8_9/v8_9_operator.py"
+            ),
+
+            "a1_assembly": (
+                "V8.9 corrected with every V7.8 "
+                "AMBIGUOUS coordinate restored to "
+                "the exact observed byte"
+            ),
+
+            # ----------------------------------------------------
+            # A5-v1 identity
+            # ----------------------------------------------------
+
+            "a5_action": (
+                "COPY_EXACT_OBSERVED_BYTE"
+            ),
+
+            "a5_fallback": (
+                "Notebook87 A1"
+            ),
 
             "a5_policy_id": result.get(
                 "a5_policy_id",
                 A5_POLICY_ID,
             ),
+
             "a5_bundle_id": result.get(
                 "bundle_id"
             ),
+
             "a5_model_sha256": result.get(
                 "model_sha256"
             ),
+
             "a5_calibrator_sha256": result.get(
                 "calibrator_sha256"
             ),
 
+            # ----------------------------------------------------
+            # Population counts
+            # ----------------------------------------------------
+
             "prepared_mask_pixels": int(
                 mask.sum()
             ),
+
             "preserve_pixels": int(
                 preserve.sum()
             ),
+
             "remove_pixels": int(
                 remove.sum()
             ),
+
             "ambiguous_pixels": int(
                 ambiguous.sum()
+            ),
+
+            "a1_changed_from_v8_9_pixels": int(
+                a1_delta_from_v89.sum()
             ),
 
             "a5_eligible_pixels": int(
                 eligible_a5_v1.sum()
             ),
+
             "a5_final_print_pixels": int(
                 print_mask.sum()
             ),
-            "a5_effectively_changed_pixels": int(
-                changed.sum()
+
+            "a5_effectively_changed_from_a1_pixels": int(
+                a5_changed_from_a1.sum()
+            ),
+
+            "a5_changed_from_v7_8_pixels": int(
+                a5_changed_from_v78.sum()
             ),
 
             "a5_final_annotation_pixels": int(
@@ -1490,6 +1549,7 @@ def authorise(sid: str):
                     == "ANNOTATION"
                 )
             ),
+
             "a5_final_uncertain_pixels": int(
                 np.sum(
                     final[eligible_a5_v1]
@@ -1497,13 +1557,70 @@ def authorise(sid: str):
                 )
             ),
 
-            # Required zero-value integrity fields.
+            # ----------------------------------------------------
+            # V7.8 integrity
+            # ----------------------------------------------------
+
             "v7_8_outside_mask_drift": int(
                 np.sum(
-                    baseline[outside_mask]
+                    geometry_t80[outside_mask]
                     != observed[outside_mask]
                 )
             ),
+
+            # ----------------------------------------------------
+            # V8.9 integrity
+            # ----------------------------------------------------
+
+            "v8_9_outside_mask_drift": int(
+                np.sum(
+                    v8_9_corrected[outside_mask]
+                    != observed[outside_mask]
+                )
+            ),
+
+            # ----------------------------------------------------
+            # Notebook 87 A1 integrity
+            # ----------------------------------------------------
+
+            "a1_outside_mask_drift": int(
+                np.sum(
+                    a1[outside_mask]
+                    != observed[outside_mask]
+                )
+            ),
+
+            "a1_ambiguous_not_equal_observed": int(
+                np.sum(
+                    a1[ambiguous]
+                    != observed[ambiguous]
+                )
+            ),
+
+            "a1_non_ambiguous_v89_regression": int(
+                np.sum(
+                    a1[~ambiguous]
+                    != v8_9_corrected[~ambiguous]
+                )
+            ),
+
+            "a1_unexpected_delta_from_v89": int(
+                np.sum(
+                    a1_delta_from_v89
+                    & ~expected_a1_delta_from_v89
+                )
+            ),
+
+            "a1_missing_effective_ambiguous_restoration": int(
+                np.sum(
+                    expected_a1_delta_from_v89
+                    & ~a1_delta_from_v89
+                )
+            ),
+
+            # ----------------------------------------------------
+            # A5-v1 integrity
+            # ----------------------------------------------------
 
             "a5_outside_mask_drift": int(
                 np.sum(
@@ -1512,10 +1629,10 @@ def authorise(sid: str):
                 )
             ),
 
-            "a5_non_print_v7_8_regression": int(
+            "a5_non_print_a1_regression": int(
                 np.sum(
                     a5[non_print]
-                    != baseline[non_print]
+                    != a1[non_print]
                 )
             ),
 
@@ -1528,22 +1645,24 @@ def authorise(sid: str):
 
             "a5_changed_byte_not_equal_observed": int(
                 np.sum(
-                    changed
-                    & (a5 != observed)
+                    a5_changed_from_a1
+                    & (
+                        a5 != observed
+                    )
                 )
             ),
 
             "a5_unexpected_changed_byte": int(
                 np.sum(
-                    changed
-                    & ~expected_changed
+                    a5_changed_from_a1
+                    & ~expected_a5_changed_from_a1
                 )
             ),
 
             "a5_missing_effective_print_change": int(
                 np.sum(
-                    expected_changed
-                    & ~changed
+                    expected_a5_changed_from_a1
+                    & ~a5_changed_from_a1
                 )
             ),
 
@@ -1561,25 +1680,38 @@ def authorise(sid: str):
                 )
             ),
 
-            # Telea is diagnostic as a separate published output,
-            # but it contributes operationally to geometry_t80 at
-            # V7.8 AMBIGUOUS coordinates.
+            # ----------------------------------------------------
+            # Runtime provenance
+            # ----------------------------------------------------
+
             "telea_contributes_to_v7_8_ambiguous": bool(
                 ambiguous.any()
             ),
 
             "clean_image_used_at_runtime": False,
+
+            "historical_notebook87_a1_operational": True,
+
             "historical_notebook91_drives_output": False,
         }
 
         zero_fields = [
             "v7_8_outside_mask_drift",
+            "v8_9_outside_mask_drift",
+
+            "a1_outside_mask_drift",
+            "a1_ambiguous_not_equal_observed",
+            "a1_non_ambiguous_v89_regression",
+            "a1_unexpected_delta_from_v89",
+            "a1_missing_effective_ambiguous_restoration",
+
             "a5_outside_mask_drift",
-            "a5_non_print_v7_8_regression",
+            "a5_non_print_a1_regression",
             "a5_print_not_equal_observed",
             "a5_changed_byte_not_equal_observed",
             "a5_unexpected_changed_byte",
             "a5_missing_effective_print_change",
+
             "print_outside_eligibility",
             "print_outside_authoritative_mask",
         ]
@@ -1614,8 +1746,10 @@ def authorise(sid: str):
             "utc": datetime.now(
                 timezone.utc
             ).isoformat(),
+
             "session_id": sid,
             "contract": CORRECTION_CONTRACT,
+
             "error_type": type(exc).__name__,
             "error": str(exc),
         }
@@ -1640,39 +1774,58 @@ def authorise(sid: str):
 
     return {
         "ok": True,
+
         "corrected_url": (
             f"/api/session/{sid}/result"
         ),
+
         "original_url": (
             f"/api/session/{sid}/image"
         ),
+
         "diagnostics": {
             "prepared_mask_pixels": audit[
                 "prepared_mask_pixels"
             ],
+
             "preserve_pixels": audit[
                 "preserve_pixels"
             ],
+
             "remove_pixels": audit[
                 "remove_pixels"
             ],
+
             "ambiguous_pixels": audit[
                 "ambiguous_pixels"
             ],
+
             "a5_eligible_pixels": audit[
                 "a5_eligible_pixels"
             ],
+
             "a5_print_pixels": audit[
                 "a5_final_print_pixels"
             ],
-            "a5_changed_from_v7_8": audit[
-                "a5_effectively_changed_pixels"
+
+            "a1_changed_from_v8_9": audit[
+                "a1_changed_from_v8_9_pixels"
             ],
+
+            "a5_changed_from_a1": audit[
+                "a5_effectively_changed_from_a1_pixels"
+            ],
+
+            "a5_changed_from_v7_8": audit[
+                "a5_changed_from_v7_8_pixels"
+            ],
+
             "outside_mask_drift": audit[
                 "a5_outside_mask_drift"
             ],
-            "non_print_v7_8_regression": audit[
-                "a5_non_print_v7_8_regression"
+
+            "non_print_a1_regression": audit[
+                "a5_non_print_a1_regression"
             ],
         },
     }
@@ -1689,9 +1842,13 @@ def result(sid: str):
 
 
 @app.get("/api/session/{sid}/diagnostic/{name}")
-def diagnostic(sid: str, name: str):
+def diagnostic(
+    sid: str,
+    name: str,
+):
     names = {
         "mask": "prepared_dilation2_mask.png",
+
         "telea": "telea_diagnostic.png",
         "paper": "paper_estimate.png",
 
@@ -1700,19 +1857,38 @@ def diagnostic(sid: str, name: str):
         "ambiguous": "route_ambiguous.png",
 
         "v78": "v7_8_corrected.png",
+
+        "v89": "v8_9_corrected.png",
+
+        "a1": "a1_corrected.png",
+        "a1_delta": "a1_delta_from_v8_9.png",
+
         "eligible_a5_v1": "a5_eligible.png",
         "print": "a5_print_mask.png",
 
-        "delta": "a5_delta_from_v7_8.png",
+        "delta": "a5_delta_from_a1.png",
+        "a5_delta_a1": "a5_delta_from_a1.png",
+        "a5_delta_v78": "a5_delta_from_v7_8.png",
+
         "a5": "a5_corrected.png",
+
         "decisions": "a5_decision_overlay.png",
 
-        # Temporary compatibility aliases for the current front end.
+        # --------------------------------------------------------
+        # Temporary compatibility aliases.
+        # --------------------------------------------------------
+
         "clean": "a5_print_mask.png",
+
         "ring2": "a5_eligible_ambiguous.png",
+
         "safe_remove": "route_remove.png",
+
         "m5": "a5_corrected.png",
-        "v88": "a5_corrected.png",
+
+        # Legacy frontend label only.
+        # This now shows the actual frozen V8.9 page.
+        "v88": "v8_9_corrected.png",
     }
 
     filename = names.get(name)
@@ -1765,14 +1941,18 @@ def approval(
         )
 
     record = {
-        "utc": datetime.now(timezone.utc).isoformat(),
+        "utc": datetime.now(
+            timezone.utc
+        ).isoformat(),
+
         "session_id": sid,
         "status": value.status,
         "note": value.note,
     }
 
     (
-        directory / "whole_page_review.json"
+        directory
+        / "whole_page_review.json"
     ).write_text(
         json.dumps(
             record,
@@ -1783,6 +1963,7 @@ def approval(
     return {
         "ok": True,
         "status": value.status,
+
         "finish_url": (
             str(
                 request.url_for(
@@ -1793,9 +1974,11 @@ def approval(
             if value.status == "approved"
             else None
         ),
+
         "corrected_url": (
             f"/api/session/{sid}/result"
         ),
+
         "decision_overlay_url": (
             f"/api/session/{sid}/diagnostic/decisions"
         ),
@@ -1814,7 +1997,10 @@ def approve_compatibility(
         request=request,
     )
 
-def evidence_zip_path(sid: str) -> Path:
+
+def evidence_zip_path(
+    sid: str,
+) -> Path:
     return (
         store.folder(sid)
         / "hf_04_5_training_and_audit.zip"
@@ -1833,7 +2019,8 @@ def finish(
     session = store.load(sid)
 
     review_path = (
-        directory / "whole_page_review.json"
+        directory
+        / "whole_page_review.json"
     )
 
     if not review_path.is_file():
@@ -1844,6 +2031,7 @@ def finish(
                     "The page has not received a "
                     "whole-page review decision."
                 ),
+
                 "approval_url": (
                     f"/api/session/{sid}/approval"
                 ),
@@ -1854,6 +2042,7 @@ def finish(
         review = json.loads(
             review_path.read_text()
         )
+
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -1871,15 +2060,16 @@ def finish(
                     "The page is not approved "
                     "for packaging."
                 ),
+
                 "review_status": review.get(
                     "status"
                 ),
             },
         )
 
-
     write_png(
-        directory / "reviewed_authoritative_seed_mask.png",
+        directory
+        / "reviewed_authoritative_seed_mask.png",
         session["working"],
     )
 
@@ -1889,17 +2079,29 @@ def finish(
         "whole_page_review.json",
 
         "prepared_dilation2_mask.png",
+
         "route_preserve.png",
         "route_remove.png",
         "route_ambiguous.png",
+
         "paper_estimate.png",
         "telea_diagnostic.png",
-        
+
         "v7_8_corrected.png",
+
+        "v8_9_corrected.png",
+
+        "a1_corrected.png",
+        "a1_delta_from_v8_9.png",
+
         "a5_eligible.png",
         "a5_print_mask.png",
+
         "a5_corrected.png",
+
+        "a5_delta_from_a1.png",
         "a5_delta_from_v7_8.png",
+
         "a5_decision_overlay.png",
 
         "a5_print_probability.npy",
@@ -1912,7 +2114,10 @@ def finish(
     missing = [
         filename
         for filename in required
-        if not (directory / filename).exists()
+        if not (
+            directory
+            / filename
+        ).exists()
     ]
 
     if missing:
@@ -1923,40 +2128,116 @@ def finish(
                     "Correction package is incomplete. "
                     "Authorise the page before finishing."
                 ),
+
                 "missing": missing,
             },
         )
 
     output = evidence_zip_path(sid)
 
+    a1_operator = get_a1_operator()
+    a5_operator = get_correction_operator()
+
     manifest = {
-        "created_utc": datetime.now(timezone.utc).isoformat(),
-        "version": "HF-04.5",
-        "correction_contract": CORRECTION_CONTRACT,
-        "v78_policy_id": V78_POLICY_ID,
-        "a5_policy_id": A5_POLICY_ID,
+        "created_utc": (
+            datetime.now(
+                timezone.utc
+            ).isoformat()
+        ),
+
+        "version": APP_VERSION,
+
+        "correction_contract": (
+            CORRECTION_CONTRACT
+        ),
+
         "training_pair": [
             "annotated_page.png",
             "reviewed_authoritative_seed_mask.png",
         ],
+
         "raw_yolo_is_training_truth": False,
+
+        # --------------------------------------------------------
+        # V7.8
+        # --------------------------------------------------------
+
+        "v78_policy_id": V78_POLICY_ID,
+
         "telea_separate_file_is_diagnostic": True,
+
         "telea_contributes_to_v78_ambiguous": True,
+
+        # --------------------------------------------------------
+        # Notebook 87 A1
+        # --------------------------------------------------------
+
+        "a1_policy_id": A1_POLICY_ID,
+
+        "a1_source": (
+            "frozen/v8_9/v8_9_operator.py"
+        ),
+
+        "v89_operator_sha256": getattr(
+            a1_operator,
+            "v89_operator_sha256",
+            None,
+        ),
+
+        "a1_assembly": (
+            "V8.9 corrected, then every V7.8 "
+            "AMBIGUOUS coordinate restored to "
+            "the exact observed byte"
+        ),
+
+        # --------------------------------------------------------
+        # A5-v1
+        # --------------------------------------------------------
+
+        "a5_policy_id": getattr(
+            a5_operator,
+            "a5_policy_id",
+            A5_POLICY_ID,
+        ),
+
+        "a5_bundle_id": getattr(
+            a5_operator,
+            "bundle_id",
+            None,
+        ),
+
         "a5_print_action": (
             "COPY_EXACT_OBSERVED_BYTE"
         ),
+
         "a5_non_print_fallback": (
-            "V7.8 geometry_t80"
+            "Notebook87 A1"
         ),
+
+        # --------------------------------------------------------
+        # Global integrity
+        # --------------------------------------------------------
+
         "outside_authoritative_mask": (
             "IMMUTABLE_OBSERVED"
         ),
+
+        "clean_image_used_at_runtime": False,
+
+        "historical_notebook87_is_operational": True,
+
         "historical_notebook91_is_operational": False,
+
         "files": [],
     }
 
-    for path in sorted(directory.iterdir()):
-        if path.is_file() and path != output:
+    for path in sorted(
+        directory.iterdir()
+    ):
+        if (
+            path.is_file()
+            and path != output
+        ):
             manifest["files"].append(
                 {
                     "name": path.name,
@@ -1965,17 +2246,49 @@ def finish(
             )
 
     (
-        directory / "package_manifest.json"
-    ).write_text(json.dumps(manifest, indent=2))
+        directory
+        / "package_manifest.json"
+    ).write_text(
+        json.dumps(
+            manifest,
+            indent=2,
+        )
+    )
 
     with zipfile.ZipFile(
         output,
         "w",
         zipfile.ZIP_DEFLATED,
     ) as archive:
-        for path in sorted(directory.iterdir()):
-            if path.is_file() and path != output:
-                archive.write(path, path.name)
+        for path in sorted(
+            directory.iterdir()
+        ):
+            if (
+                path.is_file()
+                and path != output
+            ):
+                archive.write(
+                    path,
+                    path.name,
+                )
+
+    if not output.is_file():
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Evidence package creation completed "
+                "without producing the ZIP file."
+            ),
+        )
+
+    if output.stat().st_size == 0:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Evidence package creation produced "
+                "an empty ZIP file."
+            ),
+        )
 
     download_url = request.url_for(
         "download_evidence_zip",
@@ -1984,10 +2297,16 @@ def finish(
 
     return {
         "ok": True,
+
         "package_created": True,
+
         "package_filename": output.name,
+
         "package_bytes": output.stat().st_size,
-        "download_url": str(download_url),
+
+        "download_url": str(
+            download_url
+        ),
     }
 
 
@@ -1995,7 +2314,9 @@ def finish(
     "/api/session/{sid}/download.zip",
     name="download_evidence_zip",
 )
-def download_evidence_zip(sid: str):
+def download_evidence_zip(
+    sid: str,
+):
     path = evidence_zip_path(sid)
 
     if not path.is_file():
@@ -2005,8 +2326,12 @@ def download_evidence_zip(sid: str):
                 "message": (
                     "Finish package has not been created"
                 ),
+
                 "session_id": sid,
-                "expected_path": str(path),
+
+                "expected_path": str(
+                    path
+                ),
             },
         )
 
@@ -2017,24 +2342,33 @@ def download_evidence_zip(sid: str):
                 "message": (
                     "The evidence ZIP exists but is empty"
                 ),
+
                 "session_id": sid,
             },
         )
 
     return FileResponse(
         path=str(path),
+
         media_type="application/zip",
+
         filename=path.name,
+
         headers={
             "Cache-Control": "no-store",
         },
     )
 
-@app.get("/api/session/{sid}/download")
+
+@app.get(
+    "/api/session/{sid}/download"
+)
 def download_evidence_zip_compatibility(
     sid: str,
 ):
-    return download_evidence_zip(sid)
+    return download_evidence_zip(
+        sid
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2043,72 +2377,127 @@ def download_evidence_zip_compatibility(
 
 @app.get("/health")
 def health():
-    operator = get_correction_operator()
+    a1_operator = get_a1_operator()
+    a5_operator = get_correction_operator()
 
     return {
         "ok": True,
+
         "version": APP_VERSION,
+
         "correction_contract": (
             CORRECTION_CONTRACT
         ),
-        "v78_policy_id": getattr(
-            operator,
-            "v78_policy_id",
-            V78_POLICY_ID,
+
+        "device": get_device(),
+
+        # --------------------------------------------------------
+        # V7.8
+        # --------------------------------------------------------
+
+        "v78_policy_id": (
+            V78_POLICY_ID
         ),
+
+        "telea_operational": True,
+
+        "telea_role": (
+            "Frozen V7.8 AMBIGUOUS route before "
+            "Notebook 87 A1 restoration"
+        ),
+
+        # --------------------------------------------------------
+        # Notebook 87 A1
+        # --------------------------------------------------------
+
+        "a1_policy_id": getattr(
+            a1_operator,
+            "a1_policy_id",
+            A1_POLICY_ID,
+        ),
+
+        "v89_operator_sha256": getattr(
+            a1_operator,
+            "v89_operator_sha256",
+            None,
+        ),
+
+        "a1_source": (
+            "Frozen V8.9 plus Notebook 87 "
+            "AMBIGUOUS-to-observed assembly"
+        ),
+
+        # --------------------------------------------------------
+        # A5-v1
+        # --------------------------------------------------------
+
         "a5_policy_id": getattr(
-            operator,
+            a5_operator,
             "a5_policy_id",
             A5_POLICY_ID,
         ),
+
         "bundle_id": getattr(
-            operator,
+            a5_operator,
             "bundle_id",
             None,
-        ),
-        "device": get_device(),
-
-        "telea_operational": True,
-        "telea_role": (
-            "V7.8 AMBIGUOUS-route fallback"
         ),
 
         "a5_print_action": (
             "COPY_EXACT_OBSERVED_BYTE"
         ),
+
         "a5_non_print_fallback": (
-            "V7.8 geometry_t80"
+            "Notebook87 A1"
         ),
+
+        # --------------------------------------------------------
+        # Historical identity
+        # --------------------------------------------------------
+
+        "historical_notebook87_operational": True,
 
         "historical_notebook91_operational": False,
     }
+
 
 @app.get("/startup-evidence")
 def download_startup_evidence():
     root = STARTUP_EVIDENCE_DIR
 
-    verdict = root / "startup_verdict.json"
+    verdict = (
+        root
+        / "startup_verdict.json"
+    )
+
     a5_replay = (
         root
         / "ardross_a5_replay"
         / "replay_result.json"
     )
+
     v78_replay = (
         root
         / "v78_routing_equivalence"
         / "replay_result.json"
     )
+
     v78_summary = (
         root
         / "v78_routing_equivalence"
         / "summary.json"
     )
+
     v78_csv = (
         root
         / "v78_routing_equivalence"
         / "channel_comparison.csv"
     )
-    runtime = root / "runtime_software_identities.json"
+
+    runtime = (
+        root
+        / "runtime_software_identities.json"
+    )
 
     required = [
         verdict,
@@ -2130,19 +2519,24 @@ def download_startup_evidence():
             status_code=503,
             detail={
                 "message": (
-                    "Startup commissioning evidence incomplete"
+                    "Startup commissioning evidence "
+                    "incomplete"
                 ),
+
                 "missing": missing,
             },
         )
 
-    value = json.loads(verdict.read_text())
+    value = json.loads(
+        verdict.read_text()
+    )
 
     if value.get("passed") is not True:
         raise HTTPException(
             status_code=503,
             detail=(
-                "Startup commissioning verdict is not PASS"
+                "Startup commissioning verdict "
+                "is not PASS"
             ),
         )
 
@@ -2160,8 +2554,12 @@ def download_startup_evidence():
 
     return FileResponse(
         path=zip_path,
+
         media_type="application/zip",
-        filename="hf_04_5_startup_evidence.zip",
+
+        filename=(
+            "hf_04_5_startup_evidence.zip"
+        ),
     )
 
 
@@ -2170,11 +2568,17 @@ def startup_evidence_status():
     root = STARTUP_EVIDENCE_DIR
 
     return {
-        "root": str(root.resolve()),
+        "root": str(
+            root.resolve()
+        ),
+
         "root_exists": root.exists(),
+
         "files": (
             sorted(
-                str(path.relative_to(root))
+                str(
+                    path.relative_to(root)
+                )
                 for path in root.rglob("*")
                 if path.is_file()
             )
@@ -2185,119 +2589,135 @@ def startup_evidence_status():
 
 
 # ---------------------------------------------------------------------------
-# HF-04.5 batch
+# HF-04.5.1 batch
+#
+# NOTE:
+# This endpoint assumes hf045_batch.run_batch() exposes:
+#
+#     run_batch(
+#         upload=bytes,
+#         a1_operator=A1Operator,
+#         operator=A5Operator,
+#         output_root=Path,
+#     )
+#
+# If hf045_batch.py has not yet been changed to this interface,
+# update that file before enabling batch processing.
 # ---------------------------------------------------------------------------
 
 @app.post(
-    "/batch-v78-a5",
+    "/batch-v89-a1-a5",
     response_class=FileResponse,
 )
-async def batch_v78_a5(
+async def batch_v89_a1_a5(
     file: UploadFile = File(...),
 ):
     """
-    Process one HF-04.5 ZIP using the frozen V7.8 + A5-v1
-    observed-PRINT operational contract.
+    Process one HF-04.5.1 ZIP through:
 
-    The returned ZIP contains the processed pages, masks,
-    decision artefacts, per-page audit records and batch manifest.
+        frozen V7.8
+        -> frozen V8.9
+        -> Notebook 87 A1
+        -> A5-v1 observed-PRINT processing
+
+    The returned ZIP contains page artefacts, audit records
+    and the batch manifest.
     """
 
-    filename = Path(file.filename or "").name
+    filename = Path(
+        file.filename or ""
+    ).name
 
-    if not filename.lower().endswith(".zip"):
+    if not filename.lower().endswith(
+        ".zip"
+    ):
         await file.close()
+
         raise HTTPException(
             status_code=400,
             detail="Upload one .zip file",
         )
 
-    work_dir = Path(
-        TemporaryDirectory(
-            prefix="hf045_",
-        ).name
-    )
-
-    # TemporaryDirectory must remain alive until FileResponse
-    # has completed, so cleanup is attached to the response.
-    work_dir.mkdir(parents=True, exist_ok=True)
-
-    input_zip = work_dir / "input.zip"
-    output_zip = work_dir / "hf045_results.zip"
-
     try:
-        total_bytes = 0
+        upload = await file.read()
 
-        with input_zip.open("wb") as destination:
-            while chunk := await file.read(UPLOAD_CHUNK_BYTES):
-                total_bytes += len(chunk)
-
-                if total_bytes > MAX_BATCH_BYTES:
-                    raise HTTPException(
-                        status_code=413,
-                        detail="Uploaded ZIP exceeds the batch size limit",
-                    )
-
-                destination.write(chunk)
-
-        if total_bytes == 0:
+        if not upload:
             raise HTTPException(
                 status_code=400,
                 detail="Uploaded ZIP is empty",
             )
 
-        result = run_batch(
-            input_zip=input_zip,
-            output_zip=output_zip,
-            work_dir=work_dir / "run",
+        output = run_batch(
+            upload=upload,
+
+            a1_operator=get_a1_operator(),
+
+            operator=get_correction_operator(),
+
+            output_root=BATCH_OUTPUT_ROOT,
         )
 
-        # Permit run_batch() either to return its output path or
-        # to write to the supplied output_zip path.
-        if result is not None:
-            output_zip = Path(result)
+        output = Path(output)
 
-        if not output_zip.is_file():
+        if not output.is_file():
             raise BatchFailure(
-                "Batch completed without creating its output ZIP"
+                "Batch completed without creating "
+                "its output ZIP"
+            )
+
+        if output.stat().st_size == 0:
+            raise BatchFailure(
+                "Batch output ZIP is empty"
             )
 
         return FileResponse(
-            path=output_zip,
-            filename="hf045_v78_a5_results.zip",
-            media_type="application/zip",
-            background=BackgroundTask(
-                shutil.rmtree,
-                work_dir,
-                ignore_errors=True,
+            path=str(output),
+
+            filename=(
+                "hf045_v89_a1_a5_results.zip"
             ),
+
+            media_type="application/zip",
+
+            headers={
+                "Cache-Control": "no-store",
+            },
         )
 
     except HTTPException:
-        shutil.rmtree(work_dir, ignore_errors=True)
         raise
 
     except BatchFailure as exc:
-        shutil.rmtree(work_dir, ignore_errors=True)
-
         raise HTTPException(
             status_code=422,
             detail=str(exc),
         ) from exc
 
     except Exception as exc:
-        shutil.rmtree(work_dir, ignore_errors=True)
-
-        # Log the traceback internally, but do not send it to clients.
-        logger.exception(
-            "HF-04.5 batch failed",
-            extra={"upload_filename": filename},
-        )
-
         raise HTTPException(
             status_code=500,
-            detail="HF-04.5 batch processing failed",
+            detail=(
+                "HF-04.5.1 batch processing failed: "
+                f"{type(exc).__name__}: {exc}"
+            ),
         ) from exc
 
     finally:
         await file.close()
+
+
+# ---------------------------------------------------------------------------
+# Legacy batch URL compatibility
+# ---------------------------------------------------------------------------
+
+@app.post(
+    "/batch-v78-a5",
+    response_class=FileResponse,
+    include_in_schema=False,
+)
+async def batch_v78_a5_compatibility(
+    file: UploadFile = File(...),
+):
+    return await batch_v89_a1_a5(
+        file
+    )
