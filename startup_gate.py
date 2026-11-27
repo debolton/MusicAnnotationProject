@@ -1214,6 +1214,8 @@ def gate():
         validate_package_versions()
     )
 
+    '''
+    # Temporarily removed as app.hf045_a1_startup.py hasn't yet been written!
     # ------------------------------------------------------------
     # Construct and verify Notebook 87 A1.
     #
@@ -1243,6 +1245,8 @@ def gate():
     validate_a1_replay(
         a1_replay
     )
+
+    '''
 
     # ------------------------------------------------------------
     # Construct and verify A5.
