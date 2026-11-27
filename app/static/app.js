@@ -509,7 +509,7 @@ $('undo').onclick = async () => {
 
 $('authorise').onclick = async () => {
     status(
-        'Running frozen V7.8 + A5-v1 ' +
+        'Running frozen V8.9 + A5-v1 ' +
         'observed-print operator...'
     );
 
