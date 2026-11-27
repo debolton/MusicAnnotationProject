@@ -24,6 +24,7 @@ from . import store, yolo
 from .a1_operator import A1Operator
 from .a5_operator import A5Operator
 from .hf045_batch import BatchFailure, run_batch
+from .final_evidence_upload import commit_final_approval_evidence
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +32,6 @@ from .hf045_batch import BatchFailure, run_batch
 # ---------------------------------------------------------------------------
 
 APP_VERSION = "4.5.1"
-CORRECTION_CONTRACT = "frozen-v8.9-notebook87-a1-plus-a5-v1"
 A1_POLICY_ID = "Notebook87-A1-from-frozen-V8.9"
 V78_POLICY_ID = "V7.8-geometry-t80"
 A5_POLICY_ID = "A5-v1-print-p0980-margin0960-run2"
@@ -55,6 +55,19 @@ app.mount(
     name="static",
 )
 
+# A5 still runs and produces complete diagnostics.
+A5_SHADOW_MODE = True
+
+# Must remain False until a later A5 challenger passes the required gates.
+A5_APPLY_TO_OPERATIONAL_OUTPUT = False
+
+OPERATIONAL_OUTPUT_POLICY_ID = A1_POLICY_ID
+
+CORRECTION_CONTRACT = (
+    "frozen-v8.9-notebook87-a1-operational-"
+    "plus-a5-v1-shadow"
+)
+
 
 # ---------------------------------------------------------------------------
 # API models
@@ -71,6 +84,13 @@ class Stroke(BaseModel):
 class Approval(BaseModel):
     status: str
     note: str = ""
+
+    mask_status: str | None = None
+    a1_status: str | None = None
+    a5_shadow_status: str | None = None
+
+    a5_failure_stage: str | None = None
+    a5_failure_type: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -882,6 +902,49 @@ def validate_operational_result(
     result["final"] = final
     result["print_mask"] = print_mask
 
+    # ------------------------------------------------------------
+    # Operational publication decision
+    #
+    # A5 continues to run as a complete shadow proposal, but A1 is
+    # the published correction until A5 has separately passed the
+    # required safety and promotion gates.
+    # ------------------------------------------------------------
+
+    if A5_APPLY_TO_OPERATIONAL_OUTPUT:
+        operational = a5.copy()
+        operational_stage = "A5_V1"
+    else:
+        operational = a1.copy()
+        operational_stage = "NOTEBOOK87_A1"
+
+    if np.any(
+        operational[~mask]
+        != observed[~mask]
+    ):
+        raise RuntimeError(
+            "Operational output changed pixels outside "
+            "the authoritative mask"
+        )
+
+    if not A5_APPLY_TO_OPERATIONAL_OUTPUT:
+        if not np.array_equal(
+            operational,
+            a1,
+        ):
+            raise RuntimeError(
+                "A5 shadow mode operational output "
+                "does not exactly equal Notebook 87 A1"
+            )
+
+    result["operational"] = operational
+    result["operational_stage"] = operational_stage
+    result["a5_shadow_mode"] = bool(
+        A5_SHADOW_MODE
+    )
+    result["a5_applied_to_operational_output"] = bool(
+        A5_APPLY_TO_OPERATIONAL_OUTPUT
+    )
+
     return result
 
 # ---------------------------------------------------------------------------
@@ -1260,6 +1323,9 @@ def authorise(sid: str):
         a1 = result["a1"]
         a5 = result["a5"]
 
+        operational = result["operational"]
+        operational_stage = result["operational_stage"]
+
         print_mask = result["print_mask"]
         eligible_a5_v1 = result["eligible_a5_v1"]
 
@@ -1367,6 +1433,26 @@ def authorise(sid: str):
         write_png(
             directory / "a1_corrected.png",
             a1,
+        )
+
+        # --------------------------------------------------------
+        # Persist the actual operational output.
+        #
+        # Under the current HF-04.5 policy this is byte-for-byte A1.
+        # --------------------------------------------------------
+
+        write_png(
+            directory / "operational_corrected.png",
+            operational,
+        )
+
+        operational_delta_from_a1 = (
+            operational != a1
+        )
+
+        write_png(
+            directory / "operational_delta_from_a1.png",
+            operational_delta_from_a1,
         )
 
         write_png(
@@ -1593,6 +1679,39 @@ def authorise(sid: str):
                 "V8.9 corrected with every V7.8 "
                 "AMBIGUOUS coordinate restored to "
                 "the exact observed byte"
+            ),
+
+                        # ----------------------------------------------------
+            # Operational publication identity
+            # ----------------------------------------------------
+
+            "operational_output_stage": (
+                operational_stage
+            ),
+
+            "operational_output_file": (
+                "operational_corrected.png"
+            ),
+
+            "a5_shadow_mode": bool(
+                A5_SHADOW_MODE
+            ),
+
+            "a5_applied_to_operational_output": bool(
+                A5_APPLY_TO_OPERATIONAL_OUTPUT
+            ),
+
+            "operational_changed_from_a1_pixels": int(
+                np.sum(
+                    operational != a1
+                )
+            ),
+
+            "operational_outside_mask_drift": int(
+                np.sum(
+                    operational[outside_mask]
+                    != observed[outside_mask]
+                )
             ),
 
             # ----------------------------------------------------
@@ -1833,6 +1952,8 @@ def authorise(sid: str):
             "a5_unexpected_changed_byte",
             "a5_missing_effective_print_change",
 
+            "operational_outside_mask_drift",
+
             "print_outside_eligibility",
             "print_outside_authoritative_mask",
         ]
@@ -1842,6 +1963,18 @@ def authorise(sid: str):
             for key in zero_fields
             if audit[key] != 0
         }
+
+        if (
+            not A5_APPLY_TO_OPERATIONAL_OUTPUT
+            and audit[
+                "operational_changed_from_a1_pixels"
+            ] != 0
+        ):
+            failures[
+                "operational_changed_from_a1_pixels"
+            ] = audit[
+                "operational_changed_from_a1_pixels"
+            ]
 
         if failures:
             raise RuntimeError(
@@ -1898,6 +2031,28 @@ def authorise(sid: str):
 
         "corrected_url": (
             f"/api/session/{sid}/result"
+        ),
+
+        "operational_stage": (
+            audit[
+                "operational_output_stage"
+            ]
+        ),
+
+        "a5_shadow_mode": (
+            audit[
+                "a5_shadow_mode"
+            ]
+        ),
+
+        "a5_applied_to_operational_output": (
+            audit[
+                "a5_applied_to_operational_output"
+            ]
+        ),
+
+        "a5_shadow_url": (
+            f"/api/session/{sid}/a5-shadow"
         ),
 
         "original_url": (
@@ -1957,10 +2112,18 @@ def result(sid: str):
     return png(
         read_session_png(
             sid,
-            "a5_corrected.png",
+            "operational_corrected.png",
         )
     )
 
+@app.get("/api/session/{sid}/a5-shadow")
+def a5_shadow_result(sid: str):
+    return png(
+        read_session_png(
+            sid,
+            "a5_corrected.png",
+        )
+    )
 
 @app.get("/api/session/{sid}/diagnostic/{name}")
 def diagnostic(
@@ -1984,13 +2147,10 @@ def diagnostic(
         "a1": "a1_corrected.png",
         "a1_delta": "a1_delta_from_v8_9.png",
 
-        "eligible_a5_v1": "a5_eligible.png",
-        "print": "a5_print_mask.png",
+        "operational": "operational_corrected.png",
 
-        "delta": "a5_delta_from_a1.png",
-        "a5_delta_a1": "a5_delta_from_a1.png",
-        "a5_delta_v78": "a5_delta_from_v7_8.png",
-
+        "a5_shadow": "a5_corrected.png",
+        "a5_shadow_delta": "a5_delta_from_a1.png",
         "a5": "a5_corrected.png",
 
         "decisions": "a5_decision_overlay.png",
@@ -2005,7 +2165,7 @@ def diagnostic(
 
         "safe_remove": "route_remove.png",
 
-        "m5": "a5_corrected.png",
+        "m5": "operational_corrected.png",
 
         # Legacy frontend label only.
         # This now shows the actual frozen V8.9 page.
@@ -2053,6 +2213,28 @@ def approval(
             detail=f"Invalid status: {value.status}",
         )
 
+    review_statuses = {
+        "approved",
+        "rejected",
+        "not_reviewed",
+    }
+
+    for field_name, field_value in (
+        ("mask_status", value.mask_status),
+        ("a1_status", value.a1_status),
+        ("a5_shadow_status", value.a5_shadow_status),
+    ):
+        if (
+            field_value is not None
+            and field_value not in review_statuses
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid {field_name}: {field_value}"
+                ),
+            )
+
     directory = store.folder(sid)
 
     if not directory.exists():
@@ -2067,8 +2249,50 @@ def approval(
         ).isoformat(),
 
         "session_id": sid,
+
+        # Compatibility field.
         "status": value.status,
+
+        "mask_status": (
+            value.mask_status
+            or (
+                "approved"
+                if value.status == "approved"
+                else "rejected"
+            )
+        ),
+
+        "a1_status": (
+            value.a1_status
+            or (
+                "approved"
+                if value.status == "approved"
+                else "rejected"
+            )
+        ),
+
+        "a5_shadow_status": (
+            value.a5_shadow_status
+            or "not_reviewed"
+        ),
+
+        "a5_failure_stage": (
+            value.a5_failure_stage
+        ),
+
+        "a5_failure_type": (
+            value.a5_failure_type
+        ),
+
         "note": value.note,
+
+        "operational_output_stage": (
+            "NOTEBOOK87_A1"
+        ),
+
+        "a5_applied_to_operational_output": bool(
+            A5_APPLY_TO_OPERATIONAL_OUTPUT
+        ),
     }
 
     (
@@ -2193,6 +2417,27 @@ def finish(
                 "review_status": review.get(
                     "status"
                 ),
+            },
+        )
+
+    required_approvals = {
+        "mask_status": "approved",
+        "a1_status": "approved",
+    }
+    approval_failures = {
+        key: review.get(key)
+        for key, expected in required_approvals.items()
+        if review.get(key) != expected
+    }
+    if approval_failures:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "The operational mask and Notebook 87 A1 "
+                    "output must both be approved before packaging."
+                ),
+                "approval_failures": approval_failures,
             },
         )
 
@@ -2844,6 +3089,9 @@ def finish(
         "paper_estimate.png",
         "telea_diagnostic.png",
 
+        "operational_corrected.png",
+        "operational_delta_from_a1.png",
+
         "v7_8_corrected.png",
 
         "v8_9_corrected.png",
@@ -2958,6 +3206,32 @@ def finish(
         ),
 
         # --------------------------------------------------------
+        # Operational output
+        # --------------------------------------------------------
+
+        "operational_output_policy_id": (
+            OPERATIONAL_OUTPUT_POLICY_ID
+        ),
+
+        "operational_output_file": (
+            "operational_corrected.png"
+        ),
+
+        "operational_output_stage": (
+            "NOTEBOOK87_A1"
+        ),
+
+        "a5_shadow_mode": bool(A5_SHADOW_MODE),
+
+        "a5_applied_to_operational_output": bool(
+            A5_APPLY_TO_OPERATIONAL_OUTPUT
+        ),
+
+        "a5_shadow_proposal_file": (
+            "a5_corrected.png"
+        ),
+
+        # --------------------------------------------------------
         # A5-v1
         # --------------------------------------------------------
 
@@ -3031,6 +3305,108 @@ def finish(
                 }
             )
 
+    # ------------------------------------------------------------
+    # Durable evidence upload
+    #
+    # Build the manifest dictionary first, but do not write the
+    # package manifest or ZIP until the remote commitment receipt
+    # has been created.
+    # ------------------------------------------------------------
+
+    evidence_review = {
+        "mask_status": review[
+            "mask_status"
+        ],
+
+        "correction_status": review.get(
+            "a1_status"
+        ),
+
+        "a1_status": review.get(
+            "a1_status"
+        ),
+
+        "a5_shadow_status": review.get(
+            "a5_shadow_status"
+        ),
+
+        "failure_stage": review.get(
+            "a5_failure_stage"
+        ),
+
+        "failure_type": review.get(
+            "a5_failure_type"
+        ),
+
+        "notes": review.get(
+            "note",
+            "",
+        ),
+
+        "operational_output_stage": (
+            "NOTEBOOK87_A1"
+        ),
+
+        "a5_applied_to_operational_output": bool(
+            A5_APPLY_TO_OPERATIONAL_OUTPUT
+        ),
+    }
+
+    training_evidence = (
+        commit_final_approval_evidence(
+            directory=directory,
+            sid=sid,
+            review=evidence_review,
+            package_manifest=manifest,
+        )
+    )
+
+    receipt_path = (
+        directory
+        / "training_evidence_upload.json"
+    )
+
+    if not receipt_path.is_file():
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Evidence upload returned without "
+                "creating training_evidence_upload.json."
+            ),
+        )
+
+    # ------------------------------------------------------------
+    # Rebuild the manifest file list after the receipt exists.
+    # ------------------------------------------------------------
+
+    manifest[
+        "training_evidence"
+    ] = training_evidence
+
+    manifest[
+        "files"
+    ] = []
+
+    for path in sorted(
+        directory.iterdir()
+    ):
+        if (
+            path.is_file()
+            and path != output
+            and path.name
+            != "package_manifest.json"
+        ):
+            manifest[
+                "files"
+            ].append(
+                {
+                    "name": path.name,
+                    "bytes": (
+                        path.stat().st_size
+                    ),
+                }
+            )
+
     package_manifest_path = (
         directory
         / "package_manifest.json"
@@ -3044,6 +3420,11 @@ def finish(
         ),
         encoding="utf-8",
     )
+
+    # ------------------------------------------------------------
+    # Create the local package only after the remote receipt has
+    # been included in package_manifest.json.
+    # ------------------------------------------------------------
 
     with zipfile.ZipFile(
         output,
@@ -3098,6 +3479,20 @@ def finish(
             output.stat().st_size
         ),
 
+        "operational_output_stage": (
+            "NOTEBOOK87_A1"
+        ),
+
+        "a5_shadow_mode": bool(A5_SHADOW_MODE),
+
+        "a5_applied_to_operational_output": bool(
+            A5_APPLY_TO_OPERATIONAL_OUTPUT
+        ),
+
+        "training_evidence": (
+            training_evidence
+        ),
+
         "a5_eligible_diagnostic_rows": int(
             eligible.sum()
         ),
@@ -3111,16 +3506,7 @@ def finish(
         ),
     }
 
-    from app.final_evidence_upload import (
-        commit_final_approval_evidence,
-    )
 
-    training_evidence = commit_final_approval_evidence(
-        directory=directory,
-        sid=sid,
-        review=review,
-        package_manifest=manifest,
-    )
 
 @app.get(
     "/api/session/{sid}/download.zip",
@@ -3237,6 +3623,24 @@ def health():
         "a1_source": (
             "Frozen V8.9 plus Notebook 87 "
             "AMBIGUOUS-to-observed assembly"
+        ),
+
+        "operational_output_policy_id": (
+            OPERATIONAL_OUTPUT_POLICY_ID
+        ),
+
+        "operational_output_stage": (
+            "NOTEBOOK87_A1"
+            if not A5_APPLY_TO_OPERATIONAL_OUTPUT
+            else "A5_V1"
+        ),
+
+        "a5_shadow_mode": bool(
+            A5_SHADOW_MODE
+        ),
+
+        "a5_applied_to_operational_output": bool(
+            A5_APPLY_TO_OPERATIONAL_OUTPUT
         ),
 
         # --------------------------------------------------------
