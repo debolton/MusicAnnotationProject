@@ -939,7 +939,7 @@ class A5Operator:
             result["probability"]
         )
 
-        raw_p_print = np.asarry(
+        raw_p_print = np.asarray(
             result["raw_probability"]
         )
 
