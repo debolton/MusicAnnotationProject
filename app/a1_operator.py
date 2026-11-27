@@ -530,7 +530,7 @@ class A1Operator:
 
         load_v89_operator = _require_callable(
             self.module,
-            "load9_operator",
+            "loadv89_operator",
         )
 
         try:
