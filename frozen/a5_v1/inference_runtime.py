@@ -608,7 +608,7 @@ def load_bundle(
         "frozen policy",
     )
 
-    schema = _loadjson(
+    schema = _load_json(
         schema_path,
         "channel schema",
     )
