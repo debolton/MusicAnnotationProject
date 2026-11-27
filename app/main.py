@@ -20,6 +20,10 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
+from tempfile import TemporaryDirectory
+from typing import Final
+from starlette.background import BackgroundTask
+
 from . import store, yolo
 from .a5_operator import A5Operator
 from .hf045_batch import BatchFailure, run_batch
@@ -2184,31 +2188,116 @@ def startup_evidence_status():
 # HF-04.5 batch
 # ---------------------------------------------------------------------------
 
-@app.post("/batch-v78-a5")
+@app.post(
+    "/batch-v78-a5",
+    response_class=FileResponse,
+)
 async def batch_v78_a5(
     file: UploadFile = File(...),
 ):
     """
-    HF-04.5 batch remains fail-closed until run_batch()
-    consumes the frozen V7.8 + A5-v1 observed-PRINT
-    operational contract.
+    Process one HF-04.5 ZIP using the frozen V7.8 + A5-v1
+    observed-PRINT operational contract.
+
+    The returned ZIP contains the processed pages, masks,
+    decision artefacts, per-page audit records and batch manifest.
     """
 
-    if (
-        not file.filename
-        or not file.filename.lower().endswith(".zip")
-    ):
+    filename = Path(file.filename or "").name
+
+    if not filename.lower().endswith(".zip"):
+        await file.close()
         raise HTTPException(
             status_code=400,
             detail="Upload one .zip file",
         )
 
-    raise HTTPException(
-        status_code=503,
-        detail=(
-            "HF-04.5 batch is paused until "
-            "hf045_batch.run_batch is updated and "
-            "regression-tested for frozen V7.8 plus "
-            "A5-v1 observed-PRINT processing."
-        ),
+    work_dir = Path(
+        TemporaryDirectory(
+            prefix="hf045_",
+        ).name
     )
+
+    # TemporaryDirectory must remain alive until FileResponse
+    # has completed, so cleanup is attached to the response.
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    input_zip = work_dir / "input.zip"
+    output_zip = work_dir / "hf045_results.zip"
+
+    try:
+        total_bytes = 0
+
+        with input_zip.open("wb") as destination:
+            while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+                total_bytes += len(chunk)
+
+                if total_bytes > MAX_BATCH_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="Uploaded ZIP exceeds the batch size limit",
+                    )
+
+                destination.write(chunk)
+
+        if total_bytes == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Uploaded ZIP is empty",
+            )
+
+        result = run_batch(
+            input_zip=input_zip,
+            output_zip=output_zip,
+            work_dir=work_dir / "run",
+        )
+
+        # Permit run_batch() either to return its output path or
+        # to write to the supplied output_zip path.
+        if result is not None:
+            output_zip = Path(result)
+
+        if not output_zip.is_file():
+            raise BatchFailure(
+                "Batch completed without creating its output ZIP"
+            )
+
+        return FileResponse(
+            path=output_zip,
+            filename="hf045_v78_a5_results.zip",
+            media_type="application/zip",
+            background=BackgroundTask(
+                shutil.rmtree,
+                work_dir,
+                ignore_errors=True,
+            ),
+        )
+
+    except HTTPException:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        raise
+
+    except BatchFailure as exc:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+        # Log the traceback internally, but do not send it to clients.
+        logger.exception(
+            "HF-04.5 batch failed",
+            extra={"upload_filename": filename},
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="HF-04.5 batch processing failed",
+        ) from exc
+
+    finally:
+        await file.close()
