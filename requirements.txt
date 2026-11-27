@@ -9,4 +9,4 @@ opencv-python-headless==4.14.0.94
 Pillow==11.3.0
 torch==2.14.1
 ultralytics==8.3.221
-huggingface_hub
+boto3
