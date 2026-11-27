@@ -1448,6 +1448,110 @@ def authorise(sid: str):
             allow_pickle=True,
         )
 
+        np.savez_compressed(
+            directory
+            / "a5_channels.npz",
+
+            obs=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "obs"
+                ],
+                dtype=np.uint8,
+            ),
+
+            norm=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "norm"
+                ],
+                dtype=np.uint8,
+            ),
+
+            mask=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "mask"
+                ],
+                dtype=np.uint8,
+            ),
+
+            depth=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "depth"
+                ],
+                dtype=np.float32,
+            ),
+
+            horizontal=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "horizontal"
+                ],
+                dtype=np.uint8,
+            ),
+
+            vertical=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "vertical"
+                ],
+                dtype=np.uint8,
+            ),
+
+            compact=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "compact"
+                ],
+                dtype=np.uint8,
+            ),
+
+            preserve=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "preserve"
+                ],
+                dtype=np.uint8,
+            ),
+
+            remove=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "remove"
+                ],
+                dtype=np.uint8,
+            ),
+
+            ambiguous=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "ambiguous"
+                ],
+                dtype=np.uint8,
+            ),
+
+            edge=np.asarray(
+                result[
+                    "channels"
+                ][
+                    "edge"
+                ],
+                dtype=np.uint8,
+            ),
+        )
+
         # --------------------------------------------------------
         # Whole-page operational audit
         # --------------------------------------------------------
@@ -2109,9 +2213,9 @@ def finish(
     # values of the exact 11-channel CNN input schema.
     # ------------------------------------------------------------
 
-    state_path = (
+    channel_state_path = (
         directory
-        / "state.npz"
+        / "a5_channels.npz"
     )
 
     raw_probability_path = (
@@ -2140,7 +2244,7 @@ def finish(
     )
 
     diagnostic_inputs = [
-        state_path,
+        channel_state_path,
         raw_probability_path,
         calibrated_probability_path,
         provisional_path,
@@ -2183,98 +2287,6 @@ def finish(
         "edge",
     ]
 
-    channel_aliases = {
-        "obs": [
-            "obs",
-            "observed",
-        ],
-
-        "norm": [
-            "norm",
-            "normalised",
-            "normalized",
-        ],
-
-        "mask": [
-            "mask",
-            "authoritative_mask",
-            "prepared_mask",
-        ],
-
-        "depth": [
-            "depth",
-            "mask_depth",
-        ],
-
-        "horizontal": [
-            "horizontal",
-            "g80_horizontal",
-        ],
-
-        "vertical": [
-            "vertical",
-            "g80_vertical",
-        ],
-
-        "compact": [
-            "compact",
-            "g80_compact",
-        ],
-
-        "preserve": [
-            "preserve",
-            "g80_preserve",
-        ],
-
-        "remove": [
-            "remove",
-            "g80_remove",
-        ],
-
-        "ambiguous": [
-            "ambiguous",
-            "g80_ambiguous",
-        ],
-
-        "edge": [
-            "edge",
-            "edges",
-            "observed_edge",
-        ],
-    }
-
-    def state_array(
-        state,
-        logical_name: str,
-    ) -> np.ndarray:
-        accepted_names = channel_aliases[
-            logical_name
-        ]
-
-        for name in accepted_names:
-            if name in state.files:
-                value = np.asarray(
-                    state[
-                        name
-                    ]
-                )
-
-                if value.ndim != 2:
-                    raise RuntimeError(
-                        "A5 state array "
-                        f"{name!r} must be 2-D; "
-                        f"found {value.shape}"
-                    )
-
-                return value
-
-        raise RuntimeError(
-            "state.npz omitted the required "
-            f"A5 channel {logical_name!r}; "
-            f"accepted names={accepted_names}, "
-            f"available={state.files}"
-        )
-
     def decision_text(
         value,
     ) -> str:
@@ -2292,15 +2304,41 @@ def finish(
 
     try:
         with np.load(
-            state_path,
+            channel_state_path,
             allow_pickle=False,
         ) as state:
+            missing_channels = [
+                name
+                for name in channel_order
+                if name not in state.files
+            ]
+
+            if missing_channels:
+                raise RuntimeError(
+                    "a5_channels.npz omitted required "
+                    "frozen A5 channels: "
+                    f"{missing_channels}; "
+                    f"available={state.files}"
+                )
+
+            unexpected_channels = [
+                name
+                for name in state.files
+                if name not in channel_order
+            ]
+
+            if unexpected_channels:
+                raise RuntimeError(
+                    "a5_channels.npz contains unexpected "
+                    "A5 channels: "
+                    f"{unexpected_channels}"
+                )
+
             channels = {
                 name: np.ascontiguousarray(
-                    state_array(
-                        state,
-                        name,
-                    )
+                    state[
+                        name
+                    ]
                 )
                 for name in channel_order
             }
@@ -2309,8 +2347,9 @@ def finish(
         raise HTTPException(
             status_code=500,
             detail=(
-                "Unable to load the numeric A5 "
-                f"channel arrays from state.npz: {exc}"
+                "Unable to load the frozen A5 "
+                "channel arrays from a5_channels.npz: "
+                f"{exc}"
             ),
         ) from exc
 
@@ -2766,7 +2805,7 @@ def finish(
             ),
 
             "full_channel_arrays": (
-                state_path.name
+                channel_state_path.name
             ),
 
             "raw_probability_map": (
@@ -2828,7 +2867,7 @@ def finish(
         "a5_final_decision.npy",
 
         "yolo_confidence.npy",
-        "state.npz",
+        "a5_channels.npz",
 
         "a5_live_pixel_diagnostics.csv",
         "a5_final_print_diagnostics.csv",
