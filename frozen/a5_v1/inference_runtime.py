@@ -598,7 +598,7 @@ def load_bundle(
         "model.pt",
     )
 
-    calibratorr_path = _require_file(
+    calibrator_path = _require_file(
         bundle,
         "isotonic_calibrator.joblib",
     )
