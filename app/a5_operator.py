@@ -395,40 +395,297 @@ class A5Operator:
                 "build_v78() did not return V7.8 routes"
             )
 
+        if "mask" not in base:
+            raise RuntimeError(
+                "build_v78() did not return the authoritative mask"
+            )
+
+        channels = base["channels"]
+        routes = base["routes"]
+
+        if not isinstance(channels, dict):
+            raise RuntimeError(
+                "build_v78()['channels'] must be a dictionary"
+            )
+
+        if not isinstance(routes, dict):
+            raise RuntimeError(
+                "build_v78()['routes'] must be a dictionary"
+            )
+
+        if "obs" not in channels:
+            raise RuntimeError(
+                "build_v78() channels did not contain 'obs'"
+            )
+
+        if "ambiguous" not in routes:
+            raise RuntimeError(
+                "build_v78() routes did not contain 'ambiguous'"
+            )
+
+        observed_u8 = self._require_uint8_image(
+            channels["obs"],
+            "observed channel",
+        )
+
+        geometry_t80 = self._require_uint8_image(
+            base["geometry_t80"],
+            "frozen V7.8 geometry_t80",
+            observed_u8.shape,
+        )
+
+        authority = self._require_bool_mask(
+            base["mask"],
+            "authoritative mask",
+            observed_u8.shape,
+        )
+
+        ambiguous = self._require_bool_mask(
+            routes["ambiguous"],
+            "V7.8 AMBIGUOUS route",
+            observed_u8.shape,
+        )
+
+        if np.any(
+            ambiguous
+            & ~authority
+        ):
+            raise RuntimeError(
+                "V7.8 AMBIGUOUS route escapes the "
+                "authoritative mask"
+            )
+
         result = self.process_arrays(
-            arrays=base["channels"],
-            baseline=base["geometry_t80"],
-            authoritative_mask=base["mask"],
+            arrays=channels,
+            baseline=geometry_t80,
+            authoritative_mask=authority,
             batch=batch,
         )
+
+        a5_v1 = self._require_uint8_image(
+            result["corrected"],
+            "frozen A5-v1 corrected page",
+            observed_u8.shape,
+        )
+
+        # ------------------------------------------------------
+        # Notebook 87 A1 assembly
+        #
+        # Notebook 87 starts from its corrected observed-print
+        # page and then restores every V7.8 AMBIGUOUS coordinate
+        # to the exact observed byte.
+        #
+        # Keep the three pages distinct:
+        #
+        #   geometry_t80:
+        #       frozen historical V7.8
+        #
+        #   a5_v1:
+        #       frozen A5-v1 observed-PRINT result
+        #
+        #   a1:
+        #       A5-v1 result with every V7.8 AMBIGUOUS
+        #       coordinate restored to observed
+        # ------------------------------------------------------
+
+        a1 = a5_v1.copy()
+
+        a1[ambiguous] = observed_u8[ambiguous]
+
+        # ------------------------------------------------------
+        # Notebook 87 A1 integrity checks
+        # ------------------------------------------------------
+
+        if np.any(
+            a1[ambiguous]
+            != observed_u8[ambiguous]
+        ):
+            raise RuntimeError(
+                "Notebook 87 A1 AMBIGUOUS output does not "
+                "equal the exact observed byte"
+            )
+
+        if np.any(
+            a1[~ambiguous]
+            != a5_v1[~ambiguous]
+        ):
+            raise RuntimeError(
+                "Notebook 87 A1 differs from frozen A5-v1 "
+                "outside the V7.8 AMBIGUOUS route"
+            )
+
+        if np.any(
+            a1[~authority]
+            != observed_u8[~authority]
+        ):
+            raise RuntimeError(
+                "Notebook 87 A1 changed pixels outside the "
+                "authoritative mask"
+            )
+
+        actual_a1_delta = (
+            a1
+            != a5_v1
+        )
+
+        expected_a1_delta = (
+            ambiguous
+            & (
+                observed_u8
+                != a5_v1
+            )
+        )
+
+        if not np.array_equal(
+            actual_a1_delta,
+            expected_a1_delta,
+        ):
+            unexpected = int(
+                np.sum(
+                    actual_a1_delta
+                    & ~expected_a1_delta
+                )
+            )
+
+            missing = int(
+                np.sum(
+                    expected_a1_delta
+                    & ~actual_a1_delta
+                )
+            )
+
+            raise RuntimeError(
+                "Notebook 87 A1 delta does not equal the "
+                "effective AMBIGUOUS-to-observed restoration: "
+                f"unexpected={unexpected}, missing={missing}"
+            )
+
+        # A1 may differ from V7.8 at:
+        #
+        # 1. A5-v1 PRINT coordinates outside AMBIGUOUS; and
+        # 2. all effective AMBIGUOUS-to-observed restorations.
+        #
+        # This check proves that A1 has no unexplained changes
+        # relative to V7.8.
+
+        print_mask = self._require_bool_mask(
+            result["print_mask"],
+            "A5-v1 PRINT mask",
+            observed_u8.shape,
+        )
+
+        actual_a1_vs_v78 = (
+            a1
+            != geometry_t80
+        )
+
+        permitted_a1_vs_v78 = (
+            (
+                print_mask
+                & (
+                    observed_u8
+                    != geometry_t80
+                )
+            )
+            |
+            (
+                ambiguous
+                & (
+                    observed_u8
+                    != geometry_t80
+                )
+            )
+        )
+
+        if np.any(
+            actual_a1_vs_v78
+            & ~permitted_a1_vs_v78
+        ):
+            unexpected = int(
+                np.sum(
+                    actual_a1_vs_v78
+                    & ~permitted_a1_vs_v78
+                )
+            )
+
+            raise RuntimeError(
+                "Notebook 87 A1 contains unexplained changes "
+                "relative to frozen V7.8: "
+                f"unexpected={unexpected}"
+            )
 
         return {
             **base,
 
-            # Frozen A5-v1 whole-page result.
-            "a5": result["corrected"],
-            "a5_v1": result["corrected"],
+            # --------------------------------------------------
+            # Historical frozen V7.8 baseline
+            # --------------------------------------------------
 
-            # Calibrated PRINT probability.
+            "geometry_t80": geometry_t80,
+            "v7_8": geometry_t80,
+
+            # --------------------------------------------------
+            # Frozen A5-v1 observed-PRINT page
+            # --------------------------------------------------
+
+            "a5": a5_v1,
+            "a5_v1": a5_v1,
+
+            # --------------------------------------------------
+            # Notebook 87 A1 assembly
+            # --------------------------------------------------
+
+            "a1": a1,
+            "a1_notebook87": a1,
+
+            # Explicit A1 deltas for audit and packaging.
+            "a1_delta_from_a5": actual_a1_delta,
+            "a1_delta_from_v7_8": actual_a1_vs_v78,
+
+            # --------------------------------------------------
+            # Calibrated PRINT probability
+            # --------------------------------------------------
+
             "p_print": result["probability"],
 
-            # Three-class decisions.
+            # --------------------------------------------------
+            # Three-class A5-v1 decisions
+            # --------------------------------------------------
+
             "provisional": result["provisional"],
             "final": result["final"],
 
-            # Frozen candidate and effective intervention maps.
-            "eligible_a5_v1": result["eligible"],
-            "print_mask": result["print_mask"],
+            # --------------------------------------------------
+            # Frozen candidate and intervention maps
+            # --------------------------------------------------
 
-            # Candidate coordinates.
+            "eligible_a5_v1": result["eligible"],
+            "print_mask": print_mask,
+
+            # --------------------------------------------------
+            # Candidate coordinates
+            # --------------------------------------------------
+
             "a5_ys": result["y"],
             "a5_xs": result["x"],
 
-            # Frozen identities.
+            # --------------------------------------------------
+            # Frozen identities
+            # --------------------------------------------------
+
             "a5_policy_id": self.a5_policy_id,
             "bundle_id": self.bundle_id,
             "model_sha256": self.model_sha256,
             "calibrator_sha256": self.calibrator_sha256,
+
+            # --------------------------------------------------
+            # Explicit A1 assembly identity
+            # --------------------------------------------------
+
+            "a1_assembly": (
+                "A5_V1_CORRECTED_THEN_V78_AMBIGUOUS_"
+                "RESTORED_TO_EXACT_OBSERVED"
+            ),
         }
 
     # ------------------------------------------------------------------

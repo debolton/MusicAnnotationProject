@@ -4,7 +4,7 @@ MASK_DILATION=2
 CROP_MARGIN=48
 MIN_COMPONENT_AREA=20
 GEOMETRY_THRESHOLD=80
-BAND_WIDTH=0; #Think this is picking up something weird.  Change from 4 to 0 on 26.11.26
+BAND_WIDTH=4;
 CONTEXT_RING_RADIUS=18
 
 def immutable(original,candidate,mask):
