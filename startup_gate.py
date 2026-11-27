@@ -400,7 +400,7 @@ def validate_freeze_manifest(
     policy: dict,
 ) -> None:
     required = {
-        "status",
+        "freeze_status",
         "production_authorised",
         "independent_validation_completed",
     }
@@ -445,7 +445,7 @@ def validate_freeze_manifest(
     if (
         str(
             freeze_manifest[
-                "status"
+                "freeze_status"
             ]
         )
         != str(
