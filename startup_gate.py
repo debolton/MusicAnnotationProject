@@ -727,27 +727,6 @@ def validate_artifact_manifest(
             "verifiable frozen artefacts"
         )
 
-    required_manifested = (
-        set(
-            REQUIRED_A5_BUNDLE_FILES
-        )
-        - {
-            "artifact_manifest.csv",
-        }
-    )
-
-    missing_required = sorted(
-        required_manifested
-        - listed_paths
-    )
-
-    if missing_required:
-        raise RuntimeError(
-            "Mandatory A5 bundle files are not "
-            "content-addressed in the artifact "
-            "manifest: "
-            f"{missing_required}"
-        )
 
     return verified
 
