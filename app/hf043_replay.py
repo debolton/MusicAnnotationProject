@@ -394,7 +394,7 @@ def load_replay():
         required
     )
 
-    arrays = {
+    image_arrays = {
         name: _read_image(
             f"{name}.png"
         )
@@ -412,7 +412,7 @@ def load_replay():
         ]
     }
 
-    observed = arrays[
+    observed = image_arrays[
         "obs"
     ]
 
@@ -433,7 +433,7 @@ def load_replay():
             "Ardross observed image is empty"
         )
 
-    for name, array in arrays.items():
+    for name, array in image_arrays.items():
         if array.ndim != 2:
             raise ReplayFailure(
                 f"Ardross {name} must be 2-D; "
