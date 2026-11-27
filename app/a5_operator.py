@@ -939,6 +939,10 @@ class A5Operator:
             result["probability"]
         )
 
+        raw_p_print = np.asarry(
+            result["raw_probability"]
+        )
+
         provisional = np.asarray(
             result["provisional"]
         )
@@ -948,6 +952,10 @@ class A5Operator:
         )
 
         for name, value in (
+            (
+                "raw_p_print",
+                raw_p_print,
+            ),
             (
                 "p_print",
                 p_print,
@@ -1083,6 +1091,8 @@ class A5Operator:
             "a5": a5,
 
             "eligible_a5_v1": eligible_a5_v1,
+
+            "raw_p_print": raw_p_print,
 
             "p_print": p_print,
             "provisional": provisional,
@@ -1404,6 +1414,12 @@ class A5Operator:
             dtype=np.float32,
         )
 
+        raw_probability_map = np.full(
+            observed.shape,
+            np.nan,
+            dtype=np.float32,
+        )
+
         provisional_map = np.full(
             observed.shape,
             "INELIGIBLE",
@@ -1436,6 +1452,7 @@ class A5Operator:
             return {
                 "eligible": eligible,
                 "probability": probability_map,
+                "raw_probability": raw_probability_map,
                 "provisional": provisional_map,
                 "final": final_map,
                 "y": y,
@@ -1449,7 +1466,7 @@ class A5Operator:
             self.schema,
         )
 
-        probability = (
+        score_result = (
             self.rt.score_coordinates(
                 self.model,
                 self.calibrator,
@@ -1459,13 +1476,64 @@ class A5Operator:
                 x,
                 self.device,
                 batch=batch,
+                return_raw=True,
             )
         )
 
+        if (
+            not isinstance(
+                score_result,
+                tuple,
+            )
+            or len(
+                score_result
+            ) != 2
+        ):
+            raise RuntimeError(
+                "A5-v1 score_coordinates(return_raw=True) "
+                "must return (calibrated, raw)"
+            )
+
         probability = np.asarray(
-            probability,
+            score_result[0],
             dtype=np.float64,
         )
+
+        raw_probability = np.asarray(
+            score_result[1],
+            dtype=np.float64,
+        )
+        
+        if raw_probability.shape != (
+            len(y),
+        ):
+            raise RuntimeError(
+                "A5-v1 raw PRINT probability "
+                "shape mismatch: "
+                f"expected {(len(y),)}, "
+                f"found {raw_probability.shape}"
+            )
+
+        if not np.isfinite(
+            raw_probability
+        ).all():
+            raise RuntimeError(
+                "A5-v1 raw PRINT probability "
+                "contains non-finite values"
+            )
+
+        if (
+            np.any(
+                raw_probability < 0.0
+            )
+            or np.any(
+                raw_probability > 1.0
+            )
+        ):
+            raise RuntimeError(
+                "A5-v1 raw PRINT probability "
+                "lies outside 0..1"
+            )
 
         if probability.shape != (
             len(y),
@@ -1520,6 +1588,13 @@ class A5Operator:
             y,
             x,
         ] = probability.astype(
+            np.float32
+        )
+
+        raw_probability_map[
+            y,
+            x,
+        ] = raw_probability.astype(
             np.float32
         )
 
@@ -1611,6 +1686,7 @@ class A5Operator:
         return {
             "eligible": eligible,
             "probability": probability_map,
+            "raw_probability": raw_probability_map,
             "provisional": provisional_map,
             "final": final_map,
             "y": y,

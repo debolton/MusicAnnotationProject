@@ -871,6 +871,7 @@ def score_coordinates(
     xs: np.ndarray,
     device: str,
     batch: int = 512,
+    return_raw: bool = False,
 ) -> np.ndarray:
     if (
         not isinstance(
@@ -1164,48 +1165,25 @@ def score_coordinates(
         ) from exc
 
     calibrated = np.asarray(
-        calibrated,
+        calibrator.predict(
+            raw_probability
+        ),
         dtype=np.float64,
     )
 
-    if calibrated.shape != (
-        len(ys),
-    ):
-        raise RuntimeError(
-            "Calibrated PRINT probability "
-            "length mismatch"
-        )
-
-    if not np.isfinite(
-        calibrated
-    ).all():
-        raise RuntimeError(
-            "Calibrated PRINT probability "
-            "contains non-finite values"
-        )
-
-    tolerance = 1e-12
-
-    if (
-        np.any(
-            calibrated
-            < -tolerance
-        )
-        or np.any(
-            calibrated
-            > 1.0 + tolerance
-        )
-    ):
-        raise RuntimeError(
-            "Calibrated PRINT probability "
-            "lies outside 0..1"
-        )
-
-    return np.clip(
+    calibrated = np.clip(
         calibrated,
         0.0,
         1.0,
     )
+
+    if return_raw:
+        return (
+            calibrated,
+            raw_probability,
+        )
+
+    return calibrated
 
 
 # ---------------------------------------------------------------------------

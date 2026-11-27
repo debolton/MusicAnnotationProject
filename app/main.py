@@ -1415,8 +1415,25 @@ def authorise(sid: str):
         )
 
         np.save(
+            directory / "a5_raw_print_probability.npy",
+            np.asarray(
+                result[
+                    "raw_p_print"
+                ],
+                dtype=np.float32,
+            ),
+            allow_pickle=False
+        )
+
+        np.save(
             directory / "a5_print_probability.npy",
-            p_print,
+            np.asarray(
+                result[
+                    "p_print"
+                ],
+                dtype=np.float32
+            ),
+            allow_pickle=False
         )
 
         np.save(
