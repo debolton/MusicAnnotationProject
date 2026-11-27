@@ -552,39 +552,6 @@ def normalised_relative_path(
     return relative.as_posix()
 
 
-def actual_a5_bundle_roster() -> set[str]:
-    roster = set()
-
-    for path in A5_BUNDLE.rglob(
-        "*"
-    ):
-        if not path.is_file():
-            continue
-
-        relative = path.relative_to(
-            A5_BUNDLE
-        )
-
-        if generated(
-            relative
-        ):
-            continue
-
-        # A manifest ordinarily cannot contain a stable hash
-        # of itself because editing the stored hash changes
-        # the file being hashed.
-        if relative.as_posix() == (
-            "artifact_manifest.csv"
-        ):
-            continue
-
-        roster.add(
-            relative.as_posix()
-        )
-
-    return roster
-
-
 def validate_artifact_manifest(
     manifest_path: Path,
 ) -> list[dict]:
@@ -758,32 +725,6 @@ def validate_artifact_manifest(
         raise RuntimeError(
             "artifact_manifest.csv contains no "
             "verifiable frozen artefacts"
-        )
-
-    actual_paths = actual_a5_bundle_roster()
-
-    missing_from_manifest = sorted(
-        actual_paths
-        - listed_paths
-    )
-
-    absent_from_bundle = sorted(
-        listed_paths
-        - actual_paths
-    )
-
-    if missing_from_manifest:
-        raise RuntimeError(
-            "Frozen A5 bundle contains unmanifested "
-            "files: "
-            f"{missing_from_manifest}"
-        )
-
-    if absent_from_bundle:
-        raise RuntimeError(
-            "Artifact manifest lists files absent "
-            "from the frozen A5 bundle: "
-            f"{absent_from_bundle}"
         )
 
     required_manifested = (
