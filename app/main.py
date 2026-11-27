@@ -3111,6 +3111,17 @@ def finish(
         ),
     }
 
+    from app.final_evidence_upload import (
+        commit_final_approval_evidence,
+    )
+
+    training_evidence = commit_final_approval_evidence(
+        directory=directory,
+        sid=sid,
+        review=review,
+        package_manifest=manifest,
+    )
+
 @app.get(
     "/api/session/{sid}/download.zip",
     name="download_evidence_zip",
