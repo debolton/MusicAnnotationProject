@@ -473,14 +473,64 @@ def load_replay():
             "Ardross depth contains negative values"
         )
 
-    arrays[
-        "depth"
-    ] = np.ascontiguousarray(
-        depth.astype(
-            np.float32,
-            copy=False,
+    # Construct the dictionary in the exact frozen channel order.
+    arrays = {
+        "obs": image_arrays[
+            "obs"
+        ],
+
+        "norm": image_arrays[
+            "norm"
+        ],
+
+        "mask": image_arrays[
+            "mask"
+        ],
+
+        "depth": np.ascontiguousarray(
+            depth.astype(
+                np.float32,
+                copy=False,
+            )
+        ),
+
+        "horizontal": image_arrays[
+            "horizontal"
+        ],
+
+        "vertical": image_arrays[
+            "vertical"
+        ],
+
+        "compact": image_arrays[
+            "compact"
+        ],
+
+        "preserve": image_arrays[
+            "preserve"
+        ],
+
+        "remove": image_arrays[
+            "remove"
+        ],
+
+        "ambiguous": image_arrays[
+            "ambiguous"
+        ],
+
+        "edge": image_arrays[
+            "edge"
+        ],
+    }
+
+    if list(
+        arrays
+    ) != CHANNELS:
+        raise ReplayFailure(
+            "Loaded Ardross channel order differs "
+            "from the frozen A5-v1 order: "
+            f"{list(arrays)!r}"
         )
-    )
 
     # ------------------------------------------------------------
     # Frozen tensor-input contract
