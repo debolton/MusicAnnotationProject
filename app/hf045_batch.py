@@ -13,6 +13,11 @@ import zipfile
 import cv2
 import numpy as np
 
+from final_evidence_upload import (
+    EVIDENCE_SCHEMA_VERSION, commit_staged_object, file_record,
+    get_s3_client, training_sample_id, write_json,
+)
+
 
 SUPPORTED = {
     ".png",
@@ -26,6 +31,8 @@ SUPPORTED = {
 MAX_UPLOAD_BYTES = 1_000_000_000
 MAX_FILES = 5000
 MAX_UNCOMPRESSED_BYTES = 4_000_000_000
+HISTORICAL_DATA_ROLE = "TRAINING_ELIGIBLE"
+HISTORICAL_INGESTION_METHOD = "HISTORICAL_YOLO_CORPUS_IMPORT"
 
 
 class BatchFailure(RuntimeError):
@@ -617,6 +624,53 @@ def _write_audit_json(
     )
 
 
+
+def _commit_historical_detector_pair(*, run, page, observed, seed,
+                                     observed_record, mask_record):
+    """Store a canonical historic YOLO training pair, content-addressably."""
+    get_s3_client()
+    root = Path(run) / "_detector_training_staging" / page
+    if root.exists():
+        shutil.rmtree(root)
+    target = root / "detector_training"
+    target.mkdir(parents=True, exist_ok=False)
+    annotated = target / "annotated.png"
+    mask = target / "authoritative_mask.png"
+    _write_png(annotated, observed)
+    _write_png(mask, seed)
+    sample_id = training_sample_id(annotated, mask)
+    metadata = {
+        "schema_version": EVIDENCE_SCHEMA_VERSION,
+        "evidence_role": "DETECTOR_TRAINING_CANDIDATE",
+        "data_role": HISTORICAL_DATA_ROLE,
+        "ingestion_method": HISTORICAL_INGESTION_METHOD,
+        "sample_id": sample_id,
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "source_page_key": page,
+        "source_observed_member": observed_record["path"],
+        "source_mask_member": mask_record["path"],
+        "source_observed_sha256": observed_record["sha256"],
+        "source_mask_sha256": mask_record["sha256"],
+        "annotated_image": file_record(annotated),
+        "authoritative_mask": {**file_record(mask),
+            "semantics": "HUMAN_REVIEWED_UNDILATED_ANNOTATION_SEED_MASK",
+            "dilation": 0},
+        "previously_used_for_yolo_training": True,
+        "incumbent_training_exposure": "KNOWN_EXPOSED",
+        "raw_yolo_prediction_is_truth": False,
+        "training_eligibility": {"detector_training": True,
+            "a5_pixel_training": False, "independent_holdout": False,
+            "regression_only": False},
+    }
+    write_json(target / "metadata.json", metadata)
+    try:
+        receipt = commit_staged_object(staged_directory=target,
+            final_prefix="detector_training", object_id=sample_id)
+        return {"stored": True, "sample_id": sample_id,
+                "data_role": HISTORICAL_DATA_ROLE, **receipt}
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
 def run_batch(
     upload: bytes,
     a1_operator,
@@ -687,6 +741,7 @@ def run_batch(
         parents=True,
         exist_ok=True,
     )
+    get_s3_client()
 
     run_id = (
         datetime.now(timezone.utc).strftime(
@@ -821,6 +876,7 @@ def run_batch(
             )
 
         summary_rows: list[dict] = []
+        detector_training_receipts: list[dict] = []
 
         for key in keys:
             observed_record = observed_records[key]
@@ -843,6 +899,12 @@ def run_batch(
                 )
 
             seed = _normalise_seed(seed)
+
+            detector_receipt = _commit_historical_detector_pair(
+                run=run, page=key, observed=observed, seed=seed,
+                observed_record=observed_record, mask_record=mask_record,
+            )
+            detector_training_receipts.append({"page": key, **detector_receipt})
 
             try:
                 a1_result = a1_operator.run(
@@ -1645,6 +1707,12 @@ def run_batch(
 
             audit = {
                 "page": key,
+                "data_role": HISTORICAL_DATA_ROLE,
+                "detector_training_sample_id": detector_receipt["sample_id"],
+                "detector_training_already_existed": bool(
+                    detector_receipt.get("already_existed", False)),
+                "detector_training_commit_object": detector_receipt.get(
+                    "commit_object"),
                 "observed_source": observed_record["path"],
                 "mask_source": mask_record["path"],
                 "observed_sha256": observed_record["sha256"],
@@ -1930,6 +1998,25 @@ def run_batch(
                 "No pages were processed"
             )
 
+        upload_receipt = {
+            "schema_version": EVIDENCE_SCHEMA_VERSION,
+            "stored": True,
+            "data_role": HISTORICAL_DATA_ROLE,
+            "ingestion_method": HISTORICAL_INGESTION_METHOD,
+            "pages": len(detector_training_receipts),
+            "new_detector_training_objects": sum(
+                not bool(x.get("already_existed", False))
+                for x in detector_training_receipts),
+            "existing_detector_training_objects": sum(
+                bool(x.get("already_existed", False))
+                for x in detector_training_receipts),
+            "objects": detector_training_receipts,
+            "correction_success_objects_created": 0,
+            "correction_success_reason": (
+                "Historical corpus import is not a new human A1/A5 review."),
+        }
+        write_json(run / "detector_training_upload.json", upload_receipt)
+
         summary_path = (
             run
             / "batch_summary.csv"
@@ -1967,6 +2054,15 @@ def run_batch(
                 ).isoformat()
             ),
             "pages": len(summary_rows),
+            "input_data_role": HISTORICAL_DATA_ROLE,
+            "ingestion_method": HISTORICAL_INGESTION_METHOD,
+            "detector_training_upload": {
+                "stored": True,
+                "new_objects": upload_receipt["new_detector_training_objects"],
+                "existing_objects": upload_receipt["existing_detector_training_objects"],
+                "receipt": "detector_training_upload.json",
+            },
+            "correction_success_upload": False,
 
             "a1_policy_id": getattr(
                 a1_operator,
