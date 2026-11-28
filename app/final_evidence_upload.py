@@ -84,8 +84,10 @@ FAILURE_TYPES = {
     "MASK_MISSED_ANNOTATION",
     "A1_DAMAGED_PRINT",
     "A1_RETAINED_ANNOTATION",
-    "A5_N88_FALSE_PRINT_RESTORED_ANNOTATION",
-    "A5_N88_MISSED_PRINT",
+
+    "A5_N88_DAMAGED_PRINT",
+    "A5_N88_RETAINED_ANNOTATION",
+
     "COSMETIC_FAILURE",
     "OTHER",
 }
@@ -578,7 +580,7 @@ def stage_correction_object(
             "a5_n88_corrected.png",
             "a5_n88_decision_overlay.png",
             "a5_n88_live_pixel_diagnostics.csv",
-            "a5_n88_final_print_diagnostics.csv",
+            "a5_n88_final_clean_diagnostics.csv",
             "a5_n88_diagnostic_export_manifest.json",
             "operational_correction_audit.json",
             "whole_page_review.json",
@@ -594,7 +596,7 @@ def stage_correction_object(
             "a5_n88_corrected.png",
             "a5_n88_decision_overlay.png",
             "a5_n88_live_pixel_diagnostics.csv",
-            "a5_n88_final_print_diagnostics.csv",
+            "a5_n88_final_clean_diagnostics.csv",
             "a5_n88_diagnostic_export_manifest.json",
             "operational_correction_audit.json",
             "whole_page_review.json",
