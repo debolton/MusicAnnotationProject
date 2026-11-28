@@ -357,20 +357,57 @@ def assemble(
         raise A5OperatorError("Changed byte is not equal to the observed byte")
     return output, print_mask
 
+def _decision_mismatch_count(
+    actual: np.ndarray,
+    expected: np.ndarray,
+) -> int:
+    actual_array = np.asarray(actual)
+    expected_array = np.asarray(expected)
+
+    if actual_array.shape != expected_array.shape:
+        return -1
+
+    return int(
+        np.count_nonzero(actual_array != expected_array)
+    )
 
 class A5Operator:
-    """High-level frozen A5-v1 operator."""
-
     def __init__(
         self,
-        root: str | os.PathLike[str] | None = None,
-        device: str | torch.device | None = None,
-        batch_size: int = 512,
+        bundle_dir,
+        *,
+        device=None,
+        batch_size=512,
+        run_startup_replay=True,
     ) -> None:
-        self.bundle = load_bundle(root, device)
         self.batch_size = int(batch_size)
-        if self.batch_size < 1:
-            raise A5OperatorError("batch_size must be positive")
+        self.run_startup_replay = bool(run_startup_replay)
+
+        if self.batch_size <= 0:
+            raise A5OperatorError(
+                "batch_size must be greater than zero"
+            )
+
+        # load_bundle() already:
+        # - resolves ROOT/frozen/a5_v1 or a direct bundle directory;
+        # - validates policy and channel schema;
+        # - loads the model and calibrator;
+        # - selects the Torch device.
+        self.bundle = load_bundle(
+            root=bundle_dir,
+            device=device,
+        )
+
+        # Use the resolved bundle directory from the loaded bundle.
+        self.bundle_dir = self.bundle.root
+        self.device = self.bundle.device
+
+        self.startup_replay_result: dict[str, Any] | None = None
+
+        if self.run_startup_replay:
+            self.startup_replay_result = (
+                self._run_startup_replay()
+            )
 
     def run(
         self,
@@ -379,31 +416,103 @@ class A5Operator:
         ys: np.ndarray | None = None,
         xs: np.ndarray | None = None,
     ) -> A5Result:
-        padded, shape = prepare_channels(channels, self.bundle.schema)
-        observed = _as_2d("obs", channels["obs"], shape).astype(np.uint8, copy=False)
-        mask = _as_2d("mask", channels["mask"], shape) > 0
-        a1_array = _as_2d("a1", a1, shape).astype(np.uint8, copy=False)
+        padded, shape = prepare_channels(
+            channels,
+            self.bundle.schema,
+        )
+
+        observed = _as_2d(
+            "obs",
+            channels["obs"],
+            shape,
+        ).astype(np.uint8, copy=False)
+
+        mask = (
+            _as_2d(
+                "mask",
+                channels["mask"],
+                shape,
+            )
+            > 0
+        )
+
+        a1_array = _as_2d(
+            "a1",
+            a1,
+            shape,
+        ).astype(np.uint8, copy=False)
 
         if ys is None and xs is None:
-            ys, xs = eligible_coordinates(observed, mask, channels["preserve"])
+            ys, xs = eligible_coordinates(
+                observed,
+                mask,
+                channels["preserve"],
+            )
         elif ys is None or xs is None:
-            raise A5OperatorError("Provide both ys and xs, or neither")
+            raise A5OperatorError(
+                "Provide both ys and xs, or neither"
+            )
         else:
             ys = np.asarray(ys, dtype=np.int32)
             xs = np.asarray(xs, dtype=np.int32)
 
-        if np.any(ys < 0) or np.any(xs < 0) or np.any(ys >= shape[0]) or np.any(xs >= shape[1]):
-            raise A5OperatorError("Eligible coordinates fall outside the page")
-        if len(ys) and np.any(~mask[ys, xs]):
-            raise A5OperatorError("Eligible coordinates include pixels outside the authoritative mask")
+        ys = np.asarray(ys, dtype=np.int32)
+        xs = np.asarray(xs, dtype=np.int32)
+
+        if ys.ndim != 1 or xs.ndim != 1:
+            raise A5OperatorError(
+                "Eligible coordinates must be "
+                "one-dimensional arrays"
+            )
+
+        if ys.shape != xs.shape:
+            raise A5OperatorError(
+                "Eligible y and x coordinate arrays "
+                "must have the same shape"
+            )
+
+        if len(ys):
+            if (
+                np.any(ys < 0)
+                or np.any(xs < 0)
+                or np.any(ys >= shape[0])
+                or np.any(xs >= shape[1])
+            ):
+                raise A5OperatorError(
+                    "Eligible coordinates fall outside the page"
+                )
+
+            if np.any(~mask[ys, xs]):
+                raise A5OperatorError(
+                    "Eligible coordinates include pixels outside "
+                    "the authoritative mask"
+                )
 
         probability = score_coordinates(
-            self.bundle, padded, ys, xs, batch_size=self.batch_size
+            self.bundle,
+            padded,
+            ys,
+            xs,
+            batch_size=self.batch_size,
         )
+
         provisional, final = make_decisions(
-            probability, self.bundle.policy, shape, ys, xs
+            probability,
+            self.bundle.policy,
+            shape,
+            ys,
+            xs,
         )
-        image, print_mask = assemble(observed, a1_array, mask, ys, xs, final)
+
+        image, print_mask = assemble(
+            observed,
+            a1_array,
+            mask,
+            ys,
+            xs,
+            final,
+        )
+
         return A5Result(
             image=image,
             probability=probability,
@@ -414,13 +523,409 @@ class A5Operator:
             print_mask=print_mask,
         )
 
+    def _resolve_replay_dir(self) -> Path:
+        """
+        Locate the frozen replay directory.
+
+        Supported layouts:
+
+            frozen/a5_v1/
+                policy.json
+                ...
+                replay/
+
+        or:
+
+            freeze_run/
+                artefacts/
+                    policy.json
+                    ...
+                replay/
+        """
+        candidates = [
+            self.bundle_dir / "replay",
+            self.bundle_dir.parent / "replay",
+        ]
+
+        # Additional compatibility where the bundle itself is called
+        # artefacts and replay is its sibling.
+        if self.bundle_dir.name == "artefacts":
+            candidates.insert(
+                0,
+                self.bundle_dir.parent / "replay",
+            )
+
+        checked: list[str] = []
+
+        for candidate in candidates:
+            candidate = candidate.resolve()
+            candidate_text = str(candidate)
+
+            if candidate_text in checked:
+                continue
+
+            checked.append(candidate_text)
+
+            if candidate.is_dir():
+                return candidate
+
+        raise A5OperatorError(
+            "A5 startup replay directory was not found. "
+            f"Checked: {checked}"
+        )
+
+    def _run_startup_replay(self) -> dict[str, Any]:
+        """
+        Run the frozen A5-v1 replay cases.
+
+        The replay proves exact equality for:
+
+        - calibrated probabilities;
+        - provisional decisions;
+        - final decisions after page-global run filtering;
+        - final A5 page bytes.
+
+        Any failure prevents the operator from starting.
+        """
+        replay_dir = self._resolve_replay_dir()
+        contract_path = replay_dir / "replay_test.json"
+
+        if not contract_path.is_file():
+            raise A5OperatorError(
+                "Missing A5 replay contract: "
+                f"{contract_path}"
+            )
+
+        try:
+            contract = json.loads(
+                contract_path.read_text(encoding="utf-8")
+            )
+        except Exception as exc:
+            raise A5OperatorError(
+                "Cannot read A5 replay contract "
+                f"{contract_path}: {exc}"
+            ) from exc
+
+        if not isinstance(contract, dict):
+            raise A5OperatorError(
+                "A5 replay contract must contain a JSON object"
+            )
+
+        policy_id = str(
+            self.bundle.policy.get("policy_id", "")
+        )
+
+        replay_policy_id = str(
+            contract.get("policy_id", "")
+        )
+
+        if not policy_id:
+            raise A5OperatorError(
+                "Loaded A5 policy has no policy_id"
+            )
+
+        if replay_policy_id != policy_id:
+            raise A5OperatorError(
+                "A5 replay policy mismatch: "
+                f"bundle={policy_id!r}, "
+                f"replay={replay_policy_id!r}"
+            )
+
+        if contract.get("passed") is not True:
+            raise A5OperatorError(
+                "Frozen A5 replay contract is not marked passed"
+            )
+
+        pages = contract.get("pages")
+
+        if not isinstance(pages, list) or not pages:
+            raise A5OperatorError(
+                "A5 replay contract contains no replay pages"
+            )
+
+        checks: list[dict[str, Any]] = []
+
+        for page_entry in pages:
+            # Permit either:
+            #
+            #     "Page001"
+            #
+            # or:
+            #
+            #     {"page": "Page001"}
+            if isinstance(page_entry, str):
+                page = page_entry
+            elif isinstance(page_entry, Mapping):
+                page = str(
+                    page_entry.get(
+                        "page",
+                        page_entry.get("name", ""),
+                    )
+                )
+            else:
+                raise A5OperatorError(
+                    "Invalid A5 replay page entry: "
+                    f"{page_entry!r}"
+                )
+
+            if not page:
+                raise A5OperatorError(
+                    "A5 replay page entry contains no page name"
+                )
+
+            page_dir = replay_dir / page
+
+            inputs_path = (
+                page_dir / "observable_inputs.npz"
+            )
+            expected_probability_path = (
+                page_dir / "expected_probability.npy"
+             )
+            expected_provisional_path = (
+                page_dir / "expected_provisional.npy"
+            )
+            expected_final_path = (
+                page_dir / "expected_final.npy"
+            )
+            expected_a5_path = (
+                page_dir / "expected_a5.png"
+            )
+
+            required_paths = [
+                inputs_path,
+                expected_probability_path,
+                expected_provisional_path,
+                expected_final_path,
+                expected_a5_path,
+            ]
+
+            missing_paths = [
+                str(path)
+                for path in required_paths
+                if not path.is_file()
+            ]
+
+            if missing_paths:
+                raise A5OperatorError(
+                    f"A5 replay page {page!r} is incomplete; "
+                    f"missing: {missing_paths}"
+                )
+
+            try:
+                channels, a1, ys, xs = _load_npz_inputs(
+                    inputs_path
+                )
+            except Exception as exc:
+                if isinstance(exc, A5OperatorError):
+                    raise
+                raise A5OperatorError(
+                    f"Cannot load replay inputs for {page!r}: "
+                    f"{exc}"
+                ) from exc
+
+            if ys is None or xs is None:
+                raise A5OperatorError(
+                    f"A5 replay page {page!r} does not contain "
+                    "the frozen y and x coordinate arrays"
+                )
+
+            try:
+                result = self.run(
+                    channels=channels,
+                    a1=a1,
+                    ys=ys,
+                    xs=xs,
+                )
+            except Exception as exc:
+                if isinstance(exc, A5OperatorError):
+                    raise
+                raise A5OperatorError(
+                    f"A5 replay inference failed for "
+                    f"{page!r}: {exc}"
+                ) from exc
+
+            try:
+                expected_probability = np.load(
+                    expected_probability_path,
+                    allow_pickle=False,
+                )
+
+                expected_provisional = np.load(
+                    expected_provisional_path,
+                    allow_pickle=False,
+                )
+
+                expected_final = np.load(
+                    expected_final_path,
+                    allow_pickle=False,
+                )
+
+                expected_a5 = cv2.imread(
+                    str(expected_a5_path),
+                    cv2.IMREAD_GRAYSCALE,
+                )
+            except Exception as exc:
+                raise A5OperatorError(
+                    f"Cannot load expected replay output for "
+                    f"{page!r}: {exc}"
+                ) from exc
+
+            if expected_a5 is None:
+                raise A5OperatorError(
+                    "Cannot read expected replay page: "
+                    f"{expected_a5_path}"
+                )
+
+            # Normalise decision arrays to the same fixed-width
+            # Unicode representation used by make_decisions().
+            expected_provisional = np.asarray(
+                expected_provisional,
+                dtype="<U10",
+            )
+            expected_final = np.asarray(
+                expected_final,
+                dtype="<U10",
+            )
+
+            actual_probability = np.asarray(
+                result.probability,
+                dtype=np.float64,
+            )
+            expected_probability = np.asarray(
+                expected_probability,
+                dtype=np.float64,
+            )
+
+            check = {
+                "page": page,
+                "eligible_pixels": int(
+                    len(result.eligible_y)
+                ),
+                "probability_exact": bool(
+                    np.array_equal(
+                        actual_probability,
+                        expected_probability,
+                    )
+                ),
+                "provisional_exact": bool(
+                    np.array_equal(
+                        result.provisional_decision,
+                        expected_provisional,
+                    )
+                ),
+                "final_exact": bool(
+                    np.array_equal(
+                        result.final_decision,
+                        expected_final,
+                    )
+                ),
+                "page_exact": bool(
+                    np.array_equal(
+                        result.image,
+                        expected_a5,
+                    )
+                ),
+                "print_pixels": int(
+                    result.print_mask.sum()
+                ),
+            }
+
+            failed_checks = [
+                name
+                for name in (
+                    "probability_exact",
+                    "provisional_exact",
+                    "final_exact",
+                    "page_exact",
+                )
+                if not check[name]
+            ]
+
+            if failed_checks:
+                details: list[str] = []
+
+                if not check["probability_exact"]:
+                    if (
+                        actual_probability.shape
+                        == expected_probability.shape
+                        and actual_probability.size
+                    ):
+                        maximum_difference = float(
+                            np.max(
+                                np.abs(
+                                    actual_probability
+                                    - expected_probability
+                                )
+                            )
+                        )
+                    else:
+                        maximum_difference = float("nan")
+
+                    details.append(
+                        "probability shapes "
+                        f"{actual_probability.shape} versus "
+                        f"{expected_probability.shape}; "
+                        f"maximum absolute difference "
+                        f"{maximum_difference}"
+                    )
+
+                if not check["provisional_exact"]:
+                    details.append(
+                        "provisional decision mismatches="
+                        f"{_decision_mismatch_count(
+                            result.provisional_decision, 
+                            expected_provisional
+                        )}"
+                    )
+
+                if not check["final_exact"]:
+                    details.append(
+                        "final decision mismatches="
+                        f"{_decision_mismatch_count(
+                            result.final_decision, expected_final
+                        )}"
+                    )
+
+                if not check["page_exact"]:
+                    if result.image.shape == expected_a5.shape:
+                        page_differences = int(
+                            np.count_nonzero(
+                                result.image != expected_a5
+                            )
+                        )
+                    else:
+                        page_differences = -1
+
+                    details.append(
+                        "page shapes "
+                        f"{result.image.shape} versus "
+                        f"{expected_a5.shape}; "
+                        f"different pixels={page_differences}"
+                    )
+
+                raise A5OperatorError(
+                    f"A5 startup replay failed for {page!r}: "
+                    f"{failed_checks}. "
+                    + "; ".join(details)
+                )
+
+            checks.append(check)
+
+        return {
+            "policy_id": policy_id,
+            "passed": True,
+            "page_count": len(checks),
+            "replay_directory": str(replay_dir),
+            "checks": checks,
+        }
+
 
 def _load_npz_inputs(path: Path) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray | None, np.ndarray | None]:
     if not path.is_file():
         raise A5OperatorError(f"Input NPZ not found: {path}")
     with np.load(path, allow_pickle=False) as archive:
         files = set(archive.files)
-        missing = set(DEFAULT_CHANNELS) | {"a1"} - files
+        missing = (set(DEFAULT_CHANNELS)) | {"a1"} - files
         if missing:
             raise A5OperatorError(f"Input NPZ missing arrays: {sorted(missing)}")
         channels = {name: archive[name] for name in DEFAULT_CHANNELS}
@@ -441,7 +946,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     channels, a1, ys, xs = _load_npz_inputs(args.input)
-    operator = A5Operator(args.root, args.device, args.batch_size)
+    operator = A5Operator(
+        args.root,
+        device=args.device,
+        batch_size=args.batch_size,
+        run_startup_replay=True,
+    )
     result = operator.run(channels, a1, ys, xs)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
