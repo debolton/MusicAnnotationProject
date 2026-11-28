@@ -1,4 +1,5 @@
 from pathlib import Path
+from collections.abc import Mapping
 from datetime import datetime, timezone
 import io
 import json
@@ -71,6 +72,22 @@ OPERATIONAL_OUTPUT_POLICY_ID = (
 CORRECTION_CONTRACT = (
     "frozen-v8.9-notebook87-a1-operational-"
     "plus-a5-v1-shadow"
+)
+
+FINAL_PACKAGE_FILES = (
+    "annotated_page.png",
+    "reviewed_authoritative_seed_mask.png",
+    "a1_corrected.png",
+    "a5_corrected.png",
+    "operational_corrected.png",
+    "a5_decision_overlay.png",
+    "a5_live_pixel_diagnostics.csv",
+    "a5_final_print_diagnostics.csv",
+    "a5_diagnostic_export_manifest.json",
+    "operational_correction_audit.json",
+    "whole_page_review.json",
+    "training_evidence_upload.json",
+    "package_manifest.json",
 )
 
 
@@ -1007,11 +1024,8 @@ async def create(file: UploadFile = File(...)):
     directory = store.folder(sid)
 
     write_png(directory / "annotated_page.png", page)
-    write_png(directory / "yolo_draft_mask.png", draft)
-    np.save(
-        directory / "yolo_confidence.npy",
-        confidence.astype(np.float16),
-    )
+    # Revision 000 is required by the interactive undo workflow.
+    # The duplicate YOLO draft PNG and confidence NPY are not persisted.
     write_png(directory / "mask_revision_000.png", draft)
 
     return {
@@ -1390,262 +1404,158 @@ def authorise(sid: str):
         )
 
         # --------------------------------------------------------
-        # Persist V7.8 evidence
-        # --------------------------------------------------------
-
-        write_png(
-            directory / "prepared_dilation2_mask.png",
-            mask,
-        )
-
-        write_png(
-            directory / "telea_diagnostic.png",
-            result["telea"],
-        )
-
-        write_png(
-            directory / "paper_estimate.png",
-            result["paper"],
-        )
-
-        write_png(
-            directory / "route_preserve.png",
-            preserve,
-        )
-
-        write_png(
-            directory / "route_remove.png",
-            remove,
-        )
-
-        write_png(
-            directory / "route_ambiguous.png",
-            ambiguous,
-        )
-
-        write_png(
-            directory / "v7_8_corrected.png",
-            geometry_t80,
-        )
-
-        # --------------------------------------------------------
-        # Persist V8.9 / Notebook 87 A1 evidence
-        # --------------------------------------------------------
-
-        write_png(
-            directory / "v8_9_corrected.png",
-            v8_9_corrected,
-        )
-
-        write_png(
-            directory / "a1_corrected.png",
-            a1,
-        )
-
-        # --------------------------------------------------------
-        # Persist the actual operational output.
-        #
-        # Under the current HF-04.5 policy this is byte-for-byte A1.
-        # --------------------------------------------------------
-
-        write_png(
-            directory / "operational_corrected.png",
-            operational,
-        )
-
-        operational_delta_from_a1 = (
-            operational != a1
-        )
-
-        write_png(
-            directory / "operational_delta_from_a1.png",
-            operational_delta_from_a1,
-        )
-
-        write_png(
-            directory / "a1_delta_from_v8_9.png",
-            a1_delta_from_v89,
-        )
-
-        # --------------------------------------------------------
-        # Persist A5-v1 evidence
-        # --------------------------------------------------------
-
-        write_png(
-            directory / "a5_eligible.png",
-            eligible_a5_v1,
-        )
-
-        # Legacy compatibility alias.
-        write_png(
-            directory / "a5_eligible_ambiguous.png",
-            eligible_a5_v1,
-        )
-
-        write_png(
-            directory / "a5_print_mask.png",
-            print_mask,
-        )
-
-        write_png(
-            directory / "a5_corrected.png",
-            a5,
-        )
-
-        write_png(
-            directory / "a5_delta_from_a1.png",
-            a5_changed_from_a1,
-        )
-
-        write_png(
-            directory / "a5_delta_from_v7_8.png",
-            a5_changed_from_v78,
-        )
-
+        # Persist only the curated A1 -> A5 review artefacts.
+        write_png(directory / "a1_corrected.png", a1)
+        write_png(directory / "a5_corrected.png", a5)
+        write_png(directory / "operational_corrected.png", operational)
         write_png(
             directory / "a5_decision_overlay.png",
             decision_overlay,
         )
 
-        np.save(
-            directory / "a5_raw_print_probability.npy",
-            np.asarray(
-                result[
-                    "raw_p_print"
-                ],
-                dtype=np.float32,
-            ),
-            allow_pickle=False
+        # Export the temporary pixel-level A5 diagnostics directly from
+        # the in-memory result. Full-page NPY/NPZ intermediates are not
+        # written to disk.
+        import csv
+
+        channel_order = [
+            "obs", "norm", "mask", "depth", "horizontal",
+            "vertical", "compact", "preserve", "remove",
+            "ambiguous", "edge",
+        ]
+        channels = result.get("channels")
+        if not isinstance(channels, Mapping):
+            raise RuntimeError("A5 result omitted the channel mapping")
+        missing_channels = [
+            name for name in channel_order if name not in channels
+        ]
+        if missing_channels:
+            raise RuntimeError(
+                f"A5 result omitted diagnostic channels: {missing_channels}"
+            )
+        raw_probability = np.asarray(
+            result["raw_p_print"], dtype=np.float32
         )
-
-        np.save(
-            directory / "a5_print_probability.npy",
-            np.asarray(
-                result[
-                    "p_print"
-                ],
-                dtype=np.float32
-            ),
-            allow_pickle=False
+        calibrated_probability = np.asarray(
+            result["p_print"], dtype=np.float32
         )
-
-        np.save(
-            directory / "a5_provisional_decision.npy",
-            provisional,
-            allow_pickle=True,
+        yolo_confidence = np.asarray(
+            session["confidence"], dtype=np.float32
         )
-
-        np.save(
-            directory / "a5_final_decision.npy",
-            final,
-            allow_pickle=True,
+        diagnostic_arrays = {
+            "raw_p_print": raw_probability,
+            "p_print": calibrated_probability,
+            "provisional": provisional,
+            "final": final,
+            "yolo_confidence": yolo_confidence,
+            **{name: np.asarray(channels[name]) for name in channel_order},
+        }
+        mismatched = {
+            name: list(value.shape)
+            for name, value in diagnostic_arrays.items()
+            if value.shape != observed.shape
+        }
+        if mismatched:
+            raise RuntimeError(
+                "A5 diagnostic arrays do not share the page shape: "
+                f"{mismatched}"
+            )
+        eligible_diagnostic = (
+            np.isfinite(raw_probability)
+            & np.isfinite(calibrated_probability)
         )
+        eligible_y, eligible_x = np.where(eligible_diagnostic)
+        all_csv_path = directory / "a5_live_pixel_diagnostics.csv"
+        final_csv_path = directory / "a5_final_print_diagnostics.csv"
+        fieldnames = [
+            "y", "x", "raw_p_print", "calibrated_p_print",
+            "provisional_decision", "final_decision",
+            "yolo_confidence", "obs_source_byte",
+            "norm_source_byte", "obs_cnn_centre",
+            "norm_cnn_centre", "mask_cnn_centre",
+            "depth_cnn_centre", "horizontal_cnn_centre",
+            "vertical_cnn_centre", "compact_cnn_centre",
+            "preserve_cnn_centre", "remove_cnn_centre",
+            "ambiguous_cnn_centre", "edge_cnn_centre",
+        ]
+        final_print_rows = 0
+        with all_csv_path.open(
+            "w", newline="", encoding="utf-8"
+        ) as all_handle, final_csv_path.open(
+            "w", newline="", encoding="utf-8"
+        ) as final_handle:
+            all_writer = csv.DictWriter(all_handle, fieldnames=fieldnames)
+            final_writer = csv.DictWriter(final_handle, fieldnames=fieldnames)
+            all_writer.writeheader()
+            final_writer.writeheader()
+            for y, x in zip(eligible_y, eligible_x):
+                y, x = int(y), int(x)
+                provisional_value = str(provisional[y, x])
+                final_value = str(final[y, x])
+                row = {
+                    "y": y,
+                    "x": x,
+                    "raw_p_print": float(raw_probability[y, x]),
+                    "calibrated_p_print": float(
+                        calibrated_probability[y, x]
+                    ),
+                    "provisional_decision": provisional_value,
+                    "final_decision": final_value,
+                    "yolo_confidence": float(yolo_confidence[y, x]),
+                    "obs_source_byte": float(channels["obs"][y, x]),
+                    "norm_source_byte": float(channels["norm"][y, x]),
+                    "obs_cnn_centre": float(channels["obs"][y, x]) / 255.0,
+                    "norm_cnn_centre": float(channels["norm"][y, x]) / 255.0,
+                    "mask_cnn_centre": float(channels["mask"][y, x]),
+                    "depth_cnn_centre": float(channels["depth"][y, x]),
+                    "horizontal_cnn_centre": float(
+                        channels["horizontal"][y, x]
+                    ),
+                    "vertical_cnn_centre": float(
+                        channels["vertical"][y, x]
+                    ),
+                    "compact_cnn_centre": float(
+                        channels["compact"][y, x]
+                    ),
+                    "preserve_cnn_centre": float(
+                        channels["preserve"][y, x]
+                    ),
+                    "remove_cnn_centre": float(
+                        channels["remove"][y, x]
+                    ),
+                    "ambiguous_cnn_centre": float(
+                        channels["ambiguous"][y, x]
+                    ),
+                    "edge_cnn_centre": float(channels["edge"][y, x]),
+                }
+                all_writer.writerow(row)
+                if final_value == "PRINT":
+                    final_writer.writerow(row)
+                    final_print_rows += 1
 
-        np.savez_compressed(
-            directory
-            / "a5_channels.npz",
-
-            obs=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "obs"
-                ],
-                dtype=np.uint8,
-            ),
-
-            norm=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "norm"
-                ],
-                dtype=np.uint8,
-            ),
-
-            mask=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "mask"
-                ],
-                dtype=np.uint8,
-            ),
-
-            depth=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "depth"
-                ],
-                dtype=np.float32,
-            ),
-
-            horizontal=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "horizontal"
-                ],
-                dtype=np.uint8,
-            ),
-
-            vertical=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "vertical"
-                ],
-                dtype=np.uint8,
-            ),
-
-            compact=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "compact"
-                ],
-                dtype=np.uint8,
-            ),
-
-            preserve=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "preserve"
-                ],
-                dtype=np.uint8,
-            ),
-
-            remove=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "remove"
-                ],
-                dtype=np.uint8,
-            ),
-
-            ambiguous=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "ambiguous"
-                ],
-                dtype=np.uint8,
-            ),
-
-            edge=np.asarray(
-                result[
-                    "channels"
-                ][
-                    "edge"
-                ],
-                dtype=np.uint8,
-            ),
+        diagnostic_manifest = {
+            "created_utc": datetime.now(timezone.utc).isoformat(),
+            "page_shape": list(observed.shape),
+            "channel_order": channel_order,
+            "patch_size": 33,
+            "padding": "reflect",
+            "normalisation": {
+                "obs": "source value divided by 255",
+                "norm": "source value divided by 255",
+                "other_channels": "native float32 value",
+            },
+            "eligible_rows": int(eligible_diagnostic.sum()),
+            "final_print_rows": int(final_print_rows),
+            "files": {
+                "all_eligible_pixels": all_csv_path.name,
+                "final_print_pixels": final_csv_path.name,
+            },
+            "full_page_numpy_arrays_exported": False,
+        }
+        (directory / "a5_diagnostic_export_manifest.json").write_text(
+            json.dumps(diagnostic_manifest, indent=2, sort_keys=True),
+            encoding="utf-8",
         )
-
-        # --------------------------------------------------------
         # Whole-page operational audit
         # --------------------------------------------------------
 
@@ -2138,47 +2048,13 @@ def diagnostic(
     name: str,
 ):
     names = {
-        "mask": "prepared_dilation2_mask.png",
-
-        "telea": "telea_diagnostic.png",
-        "paper": "paper_estimate.png",
-
-        "preserve": "route_preserve.png",
-        "remove": "route_remove.png",
-        "ambiguous": "route_ambiguous.png",
-
-        "v78": "v7_8_corrected.png",
-
-        "v89": "v8_9_corrected.png",
-
         "a1": "a1_corrected.png",
-        "a1_delta": "a1_delta_from_v8_9.png",
-
         "operational": "operational_corrected.png",
-
         "a5_shadow": "a5_corrected.png",
-        "a5_shadow_delta": "a5_delta_from_a1.png",
         "a5": "a5_corrected.png",
-
         "decisions": "a5_decision_overlay.png",
-
-        # --------------------------------------------------------
-        # Temporary compatibility aliases.
-        # --------------------------------------------------------
-
-        "clean": "a5_print_mask.png",
-
-        "ring2": "a5_eligible_ambiguous.png",
-
-        "safe_remove": "route_remove.png",
-
         "m5": "operational_corrected.png",
-
-        # Legacy frontend label only.
-        # This now shows the actual frozen V8.9 page.
-        "v88": "v8_9_corrected.png",
     }
-
     filename = names.get(name)
 
     if filename is None:
@@ -2459,680 +2335,31 @@ def finish(
     )
 
     # ------------------------------------------------------------
-    # Export an inspectable A5 pixel-level diagnostic table.
-    #
-    # state.npz remains the authoritative full-array record.
-    # These CSV files contain one row per eligible A5 coordinate,
-    # with raw/calibrated probabilities, decisions and the central
-    # values of the exact 11-channel CNN input schema.
-    # ------------------------------------------------------------
-
-    channel_state_path = (
-        directory
-        / "a5_channels.npz"
+    # A5 diagnostic CSVs were written directly from the in-memory
+    # authorisation result. No full-page NPY/NPZ intermediates are needed.
+    diagnostic_manifest_path = (
+        directory / "a5_diagnostic_export_manifest.json"
     )
-
-    raw_probability_path = (
-        directory
-        / "a5_raw_print_probability.npy"
-    )
-
-    calibrated_probability_path = (
-        directory
-        / "a5_print_probability.npy"
-    )
-
-    provisional_path = (
-        directory
-        / "a5_provisional_decision.npy"
-    )
-
-    final_path = (
-        directory
-        / "a5_final_decision.npy"
-    )
-
-    yolo_path = (
-        directory
-        / "yolo_confidence.npy"
-    )
-
-    diagnostic_inputs = [
-        channel_state_path,
-        raw_probability_path,
-        calibrated_probability_path,
-        provisional_path,
-        final_path,
-        yolo_path,
-    ]
-
-    missing_diagnostic_inputs = [
-        path.name
-        for path in diagnostic_inputs
-        if not path.is_file()
-    ]
-
-    if missing_diagnostic_inputs:
+    try:
+        diagnostic_manifest = json.loads(
+            diagnostic_manifest_path.read_text(encoding="utf-8")
+        )
+        eligible_rows = int(diagnostic_manifest["eligible_rows"])
+        final_print_rows = int(diagnostic_manifest["final_print_rows"])
+    except Exception as exc:
         raise HTTPException(
             status_code=409,
-            detail={
-                "message": (
-                    "A5 diagnostic export inputs "
-                    "are incomplete."
-                ),
-
-                "missing": (
-                    missing_diagnostic_inputs
-                ),
-            },
-        )
-
-    channel_order = [
-        "obs",
-        "norm",
-        "mask",
-        "depth",
-        "horizontal",
-        "vertical",
-        "compact",
-        "preserve",
-        "remove",
-        "ambiguous",
-        "edge",
-    ]
-
-    def decision_text(
-        value,
-    ) -> str:
-        if isinstance(
-            value,
-            bytes,
-        ):
-            return value.decode(
-                "utf-8"
-            )
-
-        return str(
-            value
-        )
-
-    try:
-        with np.load(
-            channel_state_path,
-            allow_pickle=False,
-        ) as state:
-            missing_channels = [
-                name
-                for name in channel_order
-                if name not in state.files
-            ]
-
-            if missing_channels:
-                raise RuntimeError(
-                    "a5_channels.npz omitted required "
-                    "frozen A5 channels: "
-                    f"{missing_channels}; "
-                    f"available={state.files}"
-                )
-
-            unexpected_channels = [
-                name
-                for name in state.files
-                if name not in channel_order
-            ]
-
-            if unexpected_channels:
-                raise RuntimeError(
-                    "a5_channels.npz contains unexpected "
-                    "A5 channels: "
-                    f"{unexpected_channels}"
-                )
-
-            channels = {
-                name: np.ascontiguousarray(
-                    state[
-                        name
-                    ]
-                )
-                for name in channel_order
-            }
-
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Unable to load the frozen A5 "
-                "channel arrays from a5_channels.npz: "
-                f"{exc}"
-            ),
+            detail=f"A5 diagnostic export is unavailable: {exc}",
         ) from exc
-
-    raw_probability = np.asarray(
-        np.load(
-            raw_probability_path,
-            allow_pickle=False,
-        ),
-        dtype=np.float32,
-    )
-
-    calibrated_probability = np.asarray(
-        np.load(
-            calibrated_probability_path,
-            allow_pickle=False,
-        ),
-        dtype=np.float32,
-    )
-
-    # These two arrays are trusted local HF outputs. Older versions
-    # stored decision strings using dtype=object, which requires
-    # allow_pickle=True.
-    provisional = np.asarray(
-        np.load(
-            provisional_path,
-            allow_pickle=True,
-        )
-    )
-
-    final = np.asarray(
-        np.load(
-            final_path,
-            allow_pickle=True,
-        )
-    )
-
-    yolo_confidence = np.asarray(
-        np.load(
-            yolo_path,
-            allow_pickle=False,
-        ),
-        dtype=np.float32,
-    )
-
-    shape = raw_probability.shape
-
-    if len(
-        shape
-    ) != 2:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "The A5 raw probability map must "
-                f"be 2-D; found {shape}."
-            ),
-        )
-
-    arrays_to_validate = {
-        "calibrated_probability": (
-            calibrated_probability
-        ),
-
-        "provisional_decision": (
-            provisional
-        ),
-
-        "final_decision": (
-            final
-        ),
-
-        "yolo_confidence": (
-            yolo_confidence
-        ),
-
-        **channels,
-    }
-
-    mismatched_shapes = {
-        name: list(
-            value.shape
-        )
-        for name, value in arrays_to_validate.items()
-        if value.shape != shape
-    }
-
-    if mismatched_shapes:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "message": (
-                    "A5 diagnostic arrays do not "
-                    "share one page shape."
-                ),
-
-                "expected_shape": list(
-                    shape
-                ),
-
-                "mismatched_shapes": (
-                    mismatched_shapes
-                ),
-            },
-        )
-
-    eligible = (
-        np.isfinite(
-            raw_probability
-        )
-        & np.isfinite(
-            calibrated_probability
-        )
-    )
-
-    eligible_y, eligible_x = np.where(
-        eligible
-    )
-
-    all_csv_path = (
-        directory
-        / "a5_live_pixel_diagnostics.csv"
-    )
-
-    final_print_csv_path = (
-        directory
-        / "a5_final_print_diagnostics.csv"
-    )
-
-    fieldnames = [
-        "y",
-        "x",
-
-        "raw_p_print",
-        "calibrated_p_print",
-
-        "provisional_decision",
-        "final_decision",
-
-        "yolo_confidence",
-
-        "obs_source_byte",
-        "norm_source_byte",
-
-        "obs_cnn_centre",
-        "norm_cnn_centre",
-
-        "mask_cnn_centre",
-        "depth_cnn_centre",
-        "horizontal_cnn_centre",
-        "vertical_cnn_centre",
-        "compact_cnn_centre",
-        "preserve_cnn_centre",
-        "remove_cnn_centre",
-        "ambiguous_cnn_centre",
-        "edge_cnn_centre",
-    ]
-
-    all_temporary = all_csv_path.with_name(
-        all_csv_path.name
-        + ".tmp"
-    )
-
-    final_temporary = (
-        final_print_csv_path.with_name(
-            final_print_csv_path.name
-            + ".tmp"
-        )
-    )
-
-    try:
-        with (
-            all_temporary.open(
-                "w",
-                newline="",
-                encoding="utf-8",
-            ) as all_handle,
-            final_temporary.open(
-                "w",
-                newline="",
-                encoding="utf-8",
-            ) as final_handle,
-        ):
-            all_writer = csv.DictWriter(
-                all_handle,
-                fieldnames=fieldnames,
-            )
-
-            final_writer = csv.DictWriter(
-                final_handle,
-                fieldnames=fieldnames,
-            )
-
-            all_writer.writeheader()
-            final_writer.writeheader()
-
-            final_print_rows = 0
-
-            for y, x in zip(
-                eligible_y,
-                eligible_x,
-            ):
-                y = int(
-                    y
-                )
-
-                x = int(
-                    x
-                )
-
-                provisional_value = decision_text(
-                    provisional[
-                        y,
-                        x,
-                    ]
-                )
-
-                final_value = decision_text(
-                    final[
-                        y,
-                        x,
-                    ]
-                )
-
-                row = {
-                    "y": y,
-                    "x": x,
-
-                    "raw_p_print": float(
-                        raw_probability[
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "calibrated_p_print": float(
-                        calibrated_probability[
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "provisional_decision": (
-                        provisional_value
-                    ),
-
-                    "final_decision": (
-                        final_value
-                    ),
-
-                    "yolo_confidence": float(
-                        yolo_confidence[
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "obs_source_byte": float(
-                        channels[
-                            "obs"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "norm_source_byte": float(
-                        channels[
-                            "norm"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    # Values on the exact scale supplied to the CNN.
-                    "obs_cnn_centre": float(
-                        channels[
-                            "obs"
-                        ][
-                            y,
-                            x,
-                        ]
-                    )
-                    / 255.0,
-
-                    "norm_cnn_centre": float(
-                        channels[
-                            "norm"
-                        ][
-                            y,
-                            x,
-                        ]
-                    )
-                    / 255.0,
-
-                    "mask_cnn_centre": float(
-                        channels[
-                            "mask"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "depth_cnn_centre": float(
-                        channels[
-                            "depth"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "horizontal_cnn_centre": float(
-                        channels[
-                            "horizontal"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "vertical_cnn_centre": float(
-                        channels[
-                            "vertical"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "compact_cnn_centre": float(
-                        channels[
-                            "compact"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "preserve_cnn_centre": float(
-                        channels[
-                            "preserve"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "remove_cnn_centre": float(
-                        channels[
-                            "remove"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "ambiguous_cnn_centre": float(
-                        channels[
-                            "ambiguous"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-
-                    "edge_cnn_centre": float(
-                        channels[
-                            "edge"
-                        ][
-                            y,
-                            x,
-                        ]
-                    ),
-                }
-
-                all_writer.writerow(
-                    row
-                )
-
-                if final_value.upper() == "PRINT":
-                    final_writer.writerow(
-                        row
-                    )
-
-                    final_print_rows += 1
-
-        all_temporary.replace(
-            all_csv_path
-        )
-
-        final_temporary.replace(
-            final_print_csv_path
-        )
-
-    except Exception as exc:
-        all_temporary.unlink(
-            missing_ok=True
-        )
-
-        final_temporary.unlink(
-            missing_ok=True
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Unable to write A5 pixel "
-                f"diagnostic CSV files: {exc}"
-            ),
-        ) from exc
-
-    diagnostic_manifest = {
-        "created_utc": (
-            datetime.now(
-                timezone.utc
-            ).isoformat()
-        ),
-
-        "page_shape": list(
-            shape
-        ),
-
-        "channel_order": (
-            channel_order
-        ),
-
-        "patch_size": 33,
-
-        "padding": "reflect",
-
-        "normalisation": {
-            "obs": "source value divided by 255",
-            "norm": "source value divided by 255",
-            "other_channels": "native float32 value",
-        },
-
-        "eligible_rows": int(
-            eligible.sum()
-        ),
-
-        "final_print_rows": int(
-            final_print_rows
-        ),
-
-        "files": {
-            "all_eligible_pixels": (
-                all_csv_path.name
-            ),
-
-            "final_print_pixels": (
-                final_print_csv_path.name
-            ),
-
-            "full_channel_arrays": (
-                channel_state_path.name
-            ),
-
-            "raw_probability_map": (
-                raw_probability_path.name
-            ),
-
-            "calibrated_probability_map": (
-                calibrated_probability_path.name
-            ),
-        },
-    }
-
-    (
-        directory
-        / "a5_diagnostic_export_manifest.json"
-    ).write_text(
-        json.dumps(
-            diagnostic_manifest,
-            indent=2,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
-    )
 
     required = [
-        "annotated_page.png",
-        "reviewed_authoritative_seed_mask.png",
-        "whole_page_review.json",
-
-        "prepared_dilation2_mask.png",
-
-        "route_preserve.png",
-        "route_remove.png",
-        "route_ambiguous.png",
-
-        "paper_estimate.png",
-        "telea_diagnostic.png",
-
-        "operational_corrected.png",
-        "operational_delta_from_a1.png",
-
-        "v7_8_corrected.png",
-
-        "v8_9_corrected.png",
-
-        "a1_corrected.png",
-        "a1_delta_from_v8_9.png",
-
-        "a5_eligible.png",
-        "a5_print_mask.png",
-
-        "a5_corrected.png",
-
-        "a5_delta_from_a1.png",
-        "a5_delta_from_v7_8.png",
-
-        "a5_decision_overlay.png",
-
-        "a5_raw_print_probability.npy",
-        "a5_print_probability.npy",
-        "a5_provisional_decision.npy",
-        "a5_final_decision.npy",
-
-        "yolo_confidence.npy",
-        "a5_channels.npz",
-
-        "a5_live_pixel_diagnostics.csv",
-        "a5_final_print_diagnostics.csv",
-        "a5_diagnostic_export_manifest.json",
-
-        "operational_correction_audit.json",
+        name
+        for name in FINAL_PACKAGE_FILES
+        if name not in {
+            "training_evidence_upload.json",
+            "package_manifest.json",
+        }
     ]
-
     missing = [
         filename
         for filename in required
@@ -3188,7 +2415,7 @@ def finish(
 
         "v78_policy_id": V78_POLICY_ID,
 
-        "telea_separate_file_is_diagnostic": True,
+        "telea_separate_file_is_diagnostic": False,
 
         "telea_contributes_to_v78_ambiguous": True,
 
@@ -3266,9 +2493,9 @@ def finish(
             "Notebook87 A1"
         ),
 
-        "a5_raw_probability_exported": True,
+        "a5_raw_probability_exported": False,
 
-        "a5_calibrated_probability_exported": True,
+        "a5_calibrated_probability_exported": False,
 
         "a5_channel_diagnostic_csv_exported": True,
 
@@ -3295,25 +2522,16 @@ def finish(
         "files": [],
     }
 
-    for path in sorted(
-        directory.iterdir()
-    ):
-        if (
-            path.is_file()
-            and path != output
-            and path.name
-            != "package_manifest.json"
-        ):
-            manifest[
-                "files"
-            ].append(
-                {
-                    "name": path.name,
-
-                    "bytes": (
-                        path.stat().st_size
-                    ),
-                }
+    for filename in FINAL_PACKAGE_FILES:
+        if filename in {
+            "training_evidence_upload.json",
+            "package_manifest.json",
+        }:
+            continue
+        path = directory / filename
+        if path.is_file():
+            manifest["files"].append(
+                {"name": path.name, "bytes": path.stat().st_size}
             )
 
     # ------------------------------------------------------------
@@ -3400,24 +2618,13 @@ def finish(
         "files"
     ] = []
 
-    for path in sorted(
-        directory.iterdir()
-    ):
-        if (
-            path.is_file()
-            and path != output
-            and path.name
-            != "package_manifest.json"
-        ):
-            manifest[
-                "files"
-            ].append(
-                {
-                    "name": path.name,
-                    "bytes": (
-                        path.stat().st_size
-                    ),
-                }
+    for filename in FINAL_PACKAGE_FILES:
+        if filename == "package_manifest.json":
+            continue
+        path = directory / filename
+        if path.is_file():
+            manifest["files"].append(
+                {"name": path.name, "bytes": path.stat().st_size}
             )
 
     package_manifest_path = (
@@ -3444,17 +2651,22 @@ def finish(
         "w",
         zipfile.ZIP_DEFLATED,
     ) as archive:
-        for path in sorted(
-            directory.iterdir()
-        ):
-            if (
-                path.is_file()
-                and path != output
-            ):
-                archive.write(
-                    path,
-                    path.name,
-                )
+        missing_package_files = [
+            filename
+            for filename in FINAL_PACKAGE_FILES
+            if not (directory / filename).is_file()
+        ]
+        if missing_package_files:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Curated evidence package is incomplete.",
+                    "missing": missing_package_files,
+                },
+            )
+        for filename in FINAL_PACKAGE_FILES:
+            path = directory / filename
+            archive.write(path, filename)
 
     if not output.is_file():
         raise HTTPException(
@@ -3509,7 +2721,7 @@ def finish(
         ),
 
         "a5_eligible_diagnostic_rows": int(
-            eligible.sum()
+            eligible_rows
         ),
 
         "a5_final_print_diagnostic_rows": int(

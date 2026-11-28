@@ -21,7 +21,7 @@ from botocore.exceptions import ClientError
 # Configuration
 # ========================================================================
 
-EVIDENCE_SCHEMA_VERSION = 2
+EVIDENCE_SCHEMA_VERSION = 3
 
 # Hugging Face namespace, for example: debolton
 HF_S3_NAMESPACE = os.environ.get(
@@ -576,7 +576,10 @@ def stage_correction_object(
             "operational_corrected.png",
             "a1_corrected.png",
             "a5_corrected.png",
-            "a5_print_mask.png",
+            "a5_decision_overlay.png",
+            "a5_live_pixel_diagnostics.csv",
+            "a5_final_print_diagnostics.csv",
+            "a5_diagnostic_export_manifest.json",
             "operational_correction_audit.json",
             "whole_page_review.json",
         ]
@@ -587,22 +590,15 @@ def stage_correction_object(
             "annotated_page.png",
             "reviewed_authoritative_seed_mask.png",
             "operational_corrected.png",
-            "v7_8_corrected.png",
-            "v8_9_corrected.png",
             "a1_corrected.png",
             "a5_corrected.png",
-            "a5_eligible.png",
-            "a5_print_mask.png",
-            "a5_delta_from_a1.png",
-            "a5_raw_print_probability.npy",
-            "a5_print_probability.npy",
-            "a5_provisional_decision.npy",
-            "a5_final_decision.npy",
-            "a5_channels.npz",
+            "a5_decision_overlay.png",
+            "a5_live_pixel_diagnostics.csv",
+            "a5_final_print_diagnostics.csv",
+            "a5_diagnostic_export_manifest.json",
             "operational_correction_audit.json",
             "whole_page_review.json",
         ]
-
     target = Path(staging_root) / prefix
     target.mkdir(parents=True, exist_ok=False)
 
