@@ -1,10 +1,10 @@
-name: Sync to Hugging Face
+name: Sync to Hugging Face alpha
 
 on:
   push:
     branches:
       - main
-      - project_documents
+
 
 jobs:
   sync:
@@ -16,5 +16,6 @@ jobs:
       - uses: huggingface/hub-sync@v0.3.0
         with:
           github_repo_id: ${{ github.repository }}
-          huggingface_repo_id: debolton/MusicAnnotationProject
+          huggingface_repo_id: debolton/MusicAnnotationProject-alpha
           hf_token: ${{ secrets.HF_TOKEN }}
+          github_branch: main
