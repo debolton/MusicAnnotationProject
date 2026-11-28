@@ -402,12 +402,10 @@ class A5Operator:
         self.bundle_dir = self.bundle.root
         self.device = self.bundle.device
 
-        self.startup_replay_result: dict[str, Any] | None = None
+        self.startup_replay: dict[str, Any] | None = None
 
         if self.run_startup_replay:
-            self.startup_replay_result = (
-                self._run_startup_replay()
-            )
+            self.startup_replay = self._run_startup_replay()
 
     def run(
         self,

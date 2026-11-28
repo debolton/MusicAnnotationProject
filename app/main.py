@@ -31,7 +31,7 @@ from .final_evidence_upload import commit_final_approval_evidence
 # Application identity and paths
 # ---------------------------------------------------------------------------
 
-APP_VERSION = "4.5.1"
+APP_VERSION = "4.5.2"
 A1_POLICY_ID = "Notebook87-A1-from-frozen-V8.9"
 V78_POLICY_ID = "V7.8-geometry-t80"
 A5_POLICY_ID = "A5-v1-print-p0980-margin0960-run2"
@@ -39,6 +39,7 @@ A5_POLICY_ID = "A5-v1-print-p0980-margin0960-run2"
 ROOT = Path(__file__).resolve().parents[1]
 
 MODEL = ROOT / "frozen" / "yolo_detector" / "best.pt"
+A5_BUNDLE_DIR = ROOT / "frozen" / "a5_v1"
 BATCH_OUTPUT_ROOT = ROOT / "batch_runs"
 STARTUP_EVIDENCE_DIR = ROOT / "startup_evidence"
 
@@ -61,7 +62,11 @@ A5_SHADOW_MODE = True
 # Must remain False until a later A5 challenger passes the required gates.
 A5_APPLY_TO_OPERATIONAL_OUTPUT = False
 
-OPERATIONAL_OUTPUT_POLICY_ID = A1_POLICY_ID
+OPERATIONAL_OUTPUT_POLICY_ID = (
+    A5_POLICY_ID
+    if A5_APPLY_TO_OPERATIONAL_OUTPUT
+    else A1_POLICY_ID
+)
 
 CORRECTION_CONTRACT = (
     "frozen-v8.9-notebook87-a1-operational-"
@@ -129,7 +134,9 @@ def get_correction_operator() -> A5Operator:
 
     if _correction_operator is None:
         _correction_operator = A5Operator(
+            bundle_dir=A5_BUNDLE_DIR,
             device=get_device(),
+            run_startup_replay=True,
         )
 
     return _correction_operator
@@ -2287,7 +2294,9 @@ def approval(
         "note": value.note,
 
         "operational_output_stage": (
-            "NOTEBOOK87_A1"
+            "A5_V1"
+            if A5_APPLY_TO_OPERATIONAL_OUTPUT
+            else "NOTEBOOK87_A1"
         ),
 
         "a5_applied_to_operational_output": bool(
@@ -3218,7 +3227,9 @@ def finish(
         ),
 
         "operational_output_stage": (
-            "NOTEBOOK87_A1"
+            "A5_V1"
+            if A5_APPLY_TO_OPERATIONAL_OUTPUT
+            else "NOTEBOOK87_A1"
         ),
 
         "a5_shadow_mode": bool(A5_SHADOW_MODE),
@@ -3344,7 +3355,9 @@ def finish(
         ),
 
         "operational_output_stage": (
-            "NOTEBOOK87_A1"
+            "A5_V1"
+            if A5_APPLY_TO_OPERATIONAL_OUTPUT
+            else "NOTEBOOK87_A1"
         ),
 
         "a5_applied_to_operational_output": bool(
@@ -3480,7 +3493,9 @@ def finish(
         ),
 
         "operational_output_stage": (
-            "NOTEBOOK87_A1"
+            "A5_V1"
+            if A5_APPLY_TO_OPERATIONAL_OUTPUT
+            else "NOTEBOOK87_A1"
         ),
 
         "a5_shadow_mode": bool(A5_SHADOW_MODE),
