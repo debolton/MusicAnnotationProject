@@ -13,7 +13,7 @@ import zipfile
 import cv2
 import numpy as np
 
-from final_evidence_upload import (
+from .final_evidence_upload import (
     EVIDENCE_SCHEMA_VERSION, commit_staged_object, file_record,
     get_s3_client, training_sample_id, write_json,
 )
