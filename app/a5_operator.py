@@ -1107,18 +1107,59 @@ class A5Operator:
         }
 
 
-def _load_npz_inputs(path: Path) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray | None, np.ndarray | None]:
+def _load_npz_inputs(
+    path: Path,
+) -> tuple[
+    dict[str, np.ndarray],
+    np.ndarray,
+    np.ndarray | None,
+    np.ndarray | None,
+]:
     if not path.is_file():
-        raise A5OperatorError(f"Input NPZ not found: {path}")
-    with np.load(path, allow_pickle=False) as archive:
+        raise A5OperatorError(
+            f"Input NPZ not found: {path}"
+        )
+
+    with np.load(
+        path,
+        allow_pickle=False,
+    ) as archive:
         files = set(archive.files)
-        missing = (set(DEFAULT_CHANNELS)) | {"a1"} - files
+
+        required = (
+            set(DEFAULT_CHANNELS)
+            | {"a1"}
+        )
+
+        missing = required - files
+
         if missing:
-            raise A5OperatorError(f"Input NPZ missing arrays: {sorted(missing)}")
-        channels = {name: archive[name] for name in DEFAULT_CHANNELS}
+            raise A5OperatorError(
+                "Input NPZ schema mismatch. "
+                f"Path: {path}; "
+                f"missing: {sorted(missing)}; "
+                f"available: {sorted(files)}"
+            )
+
+        channels = {
+            name: archive[name]
+            for name in DEFAULT_CHANNELS
+        }
+
         a1 = archive["a1"]
-        ys = archive["y"] if "y" in files else None
-        xs = archive["x"] if "x" in files else None
+
+        ys = (
+            archive["y"]
+            if "y" in files
+            else None
+        )
+
+        xs = (
+            archive["x"]
+            if "x" in files
+            else None
+        )
+
     return channels, a1, ys, xs
 
 
