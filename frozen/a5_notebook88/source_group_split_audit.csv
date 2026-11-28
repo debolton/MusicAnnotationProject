@@ -1,0 +1,11 @@
+fold,train_groups,test_groups,test_pages,test_rows,test_source_groups,overlap_groups
+1,19,1,5,47232,Anglo_Music_Press_HotH,0
+2,19,1,4,29489,Studio_March_ttS,0
+3,17,3,7,28746,PAGE_ONLY__Page202|Studio_Somewhere|Whelan_Assassin,0
+4,18,2,4,29163,Pennine_FLM|Wright_and_Round_Faith,0
+5,18,2,4,30638,Cantino_WWTLF|Noteservice_LalD,0
+6,18,2,5,30414,Whelan_Adagio|Whelan_IwS,0
+7,17,3,5,28779,Bernaerts_Maniac|Boosey_and_Hawkes_Pomp|Hal_Leonard_WTTJ,0
+8,18,2,6,28857,Hal_Leonard_Barbie|Wright_and_Round_IwtBF,0
+9,18,2,7,28854,Obrasso_Valero|Pennine_Les_Mis,0
+10,18,2,8,28717,Cantino_Facade|Wright_and_Round_Somewhere,0

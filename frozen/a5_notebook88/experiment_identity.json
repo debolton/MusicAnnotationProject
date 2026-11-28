@@ -1,0 +1,225 @@
+{
+  "created_utc": "2026-11-23T09:12:29.426852+00:00",
+  "version": "notebook88-a5-contextual-safe-cleanup-development",
+  "source_notebook87_run": "/content/drive/MyDrive/MusicAnnotationProject/paired_hitl_development/runs/20261121_164815_notebook87",
+  "source_prediction_lock_sha256": "f8d41b551fbd19b78c45bc9e9a7e28699548cb138e417bcf711e60b86819892f",
+  "source_truth_table_sha256": "d4696e69169821b1028b1f621d2c468a1b8eeed93003634bbb5397f25f0adbff",
+  "review_manifest_sha256": "7994d7292384cb098210b7b2a50aef5af555eb9c978f201c07c050abea7ebbd4",
+  "channel_schema_sha256": "026f884840dae34d73ef3c5720c7037aeaa7b3dbf9d8a09508d565fe6984c055",
+  "fold_map_sha256": "28c52f097c029c3d89f5ca0c02d2b2a7c9e59b081132a459b6769b595372800e",
+  "eligible_manifest_sha256": "27f4bbe555366148938c319a30c52201f2780b1d94fbe665055f3b85301ca262",
+  "raw_eligible_oof_sha256": "256b59c864fa2012024acd8f5c4955ce7f2c284af49dd9199345edc18698cf84",
+  "calibrated_eligible_oof_sha256": "80759a63bbf2939550e2c42bf38ad17b9fc88e5888be7cae6ba3eb8fbbb56920",
+  "primary_predictions_sha256": "dc05abc1fe6a5ce71c1f3e937d11323120868f4a8b957303829295dc61535c6f",
+  "threshold_sweep_sha256": "4f0218e2dda50a5079cb79b9660e485140edd378c8d0f4f4b28c953ce50c02e5",
+  "page_results_sha256": "70991c2ac5c87589fcb781b84badf5da299e4744caf57ca28e9068b6731beac4",
+  "source_group_results_sha256": "bd88281213061d74ff15c6cb3036cf342475f4db2e0a493b0122f7dd749a17e4",
+  "model_inventory_sha256": "74e3f3c09be86c513e5379b080c27c3df2b822d675520ce7260a61debbaff803",
+  "calibrator_inventory_sha256": "202fe89136b781b6e7dd48c32f81bc01ee5370df09c8cb098f60914806cfea5a",
+  "seed": 42,
+  "patch": 33,
+  "channels": [
+    "observed",
+    "local_normalised",
+    "reviewed_mask",
+    "mask_depth",
+    "ambiguous",
+    "p_annotation",
+    "p_print_value",
+    "p_print_available",
+    "edge",
+    "horizontal_support",
+    "vertical_support",
+    "compact_support"
+  ],
+  "tensor_channel_count": 12,
+  "batch": 512,
+  "epochs": 12,
+  "learning_rate": 0.001,
+  "weight_decay": 0.0001,
+  "clean_thresholds": [
+    0.995,
+    0.99,
+    0.98,
+    0.95
+  ],
+  "primary_clean_threshold": 0.995,
+  "minimum_clean_run": 2,
+  "models": [
+    {
+      "fold": 1,
+      "checkpoint": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/models/fold1_seed42_a5_context_cnn.pt",
+      "checkpoint_sha256": "7ab881d06f6dca5597d58d905498ad059dab6d4d1e7b7f68016ab6c9ae59c2fe",
+      "train_rows": 263657,
+      "stable_test_rows": 47232,
+      "eligible_test_rows": 47233,
+      "seconds": 787.8183791637421
+    },
+    {
+      "fold": 2,
+      "checkpoint": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/models/fold2_seed42_a5_context_cnn.pt",
+      "checkpoint_sha256": "615eae977c8da3fd36fa063cc4650d3105556022a034a88517e5eb91081cf474",
+      "train_rows": 281400,
+      "stable_test_rows": 29489,
+      "eligible_test_rows": 29489,
+      "seconds": 839.6552875041962
+    },
+    {
+      "fold": 3,
+      "checkpoint": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/models/fold3_seed42_a5_context_cnn.pt",
+      "checkpoint_sha256": "37eece572837b2fefe01ba0af4793cd04a2a0931083ea7ab0c01cc0c2027df14",
+      "train_rows": 282143,
+      "stable_test_rows": 28746,
+      "eligible_test_rows": 28748,
+      "seconds": 830.262113571167
+    },
+    {
+      "fold": 4,
+      "checkpoint": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/models/fold4_seed42_a5_context_cnn.pt",
+      "checkpoint_sha256": "f3965fefde5ed6b9c12a95d5ee7deb242fcf9066a7f04b8633268d457488e38a",
+      "train_rows": 281726,
+      "stable_test_rows": 29163,
+      "eligible_test_rows": 29163,
+      "seconds": 811.6328778266907
+    },
+    {
+      "fold": 5,
+      "checkpoint": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/models/fold5_seed42_a5_context_cnn.pt",
+      "checkpoint_sha256": "ceea4dbeeb847d49ccf65c7a33aac5e696a914792ab942a66a61c3fec77c3164",
+      "train_rows": 280251,
+      "stable_test_rows": 30638,
+      "eligible_test_rows": 30685,
+      "seconds": 819.2353889942169
+    },
+    {
+      "fold": 6,
+      "checkpoint": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/models/fold6_seed42_a5_context_cnn.pt",
+      "checkpoint_sha256": "dcb944cef295b39298e7e37a6a3f4c95869a0f7e5cad6b1a7e2ea97723eade1f",
+      "train_rows": 280475,
+      "stable_test_rows": 30414,
+      "eligible_test_rows": 30453,
+      "seconds": 821.8722279071808
+    },
+    {
+      "fold": 7,
+      "checkpoint": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/models/fold7_seed42_a5_context_cnn.pt",
+      "checkpoint_sha256": "3ba15a118ad97c00e10a0d0c8749fd505e244001549ba77b4ff545c4172fca30",
+      "train_rows": 282110,
+      "stable_test_rows": 28779,
+      "eligible_test_rows": 28779,
+      "seconds": 806.7662909030914
+    },
+    {
+      "fold": 8,
+      "checkpoint": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/models/fold8_seed42_a5_context_cnn.pt",
+      "checkpoint_sha256": "cb438cec5075a91794e11c0bb32734b8bf3c15d59c9fce3aad9d74cca9c162ee",
+      "train_rows": 282032,
+      "stable_test_rows": 28857,
+      "eligible_test_rows": 32477,
+      "seconds": 808.413156747818
+    },
+    {
+      "fold": 9,
+      "checkpoint": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/models/fold9_seed42_a5_context_cnn.pt",
+      "checkpoint_sha256": "40671823a4309f645b4a8fcb19580f18644f27b87077ff16bdc3d939b2a1cf5b",
+      "train_rows": 282035,
+      "stable_test_rows": 28854,
+      "eligible_test_rows": 38848,
+      "seconds": 803.1626577377319
+    },
+    {
+      "fold": 10,
+      "checkpoint": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/models/fold10_seed42_a5_context_cnn.pt",
+      "checkpoint_sha256": "c498df52db39da6bd910ee32b51e9b0dc5683b40d41caec26c3882ee88984e6a",
+      "train_rows": 282172,
+      "stable_test_rows": 28717,
+      "eligible_test_rows": 28717,
+      "seconds": 800.2862718105316
+    }
+  ],
+  "calibrators": [
+    {
+      "fold": 1,
+      "joblib": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/calibrators/fold1_seed42_annotation_isotonic.joblib",
+      "joblib_sha256": "9652a0c68e61d9f3b72d62cfb1752928722092f13d74a10d8f2d039857f7e1f5",
+      "semantic_sha256": "07a4d1eb4954cd419f24a0b94c6c0e67f9ec0aecc282a7c07cf9103e44fbfd96",
+      "exact_reload_replay": true
+    },
+    {
+      "fold": 2,
+      "joblib": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/calibrators/fold2_seed42_annotation_isotonic.joblib",
+      "joblib_sha256": "01c751f5dfaa7248ee11878b05174b60c4c3a889afee7912c5cad990a1319e8c",
+      "semantic_sha256": "8b7c1fa189dbaab4cc538c20a799b6ddff2f009f3674700817e4567246112d1b",
+      "exact_reload_replay": true
+    },
+    {
+      "fold": 3,
+      "joblib": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/calibrators/fold3_seed42_annotation_isotonic.joblib",
+      "joblib_sha256": "e51e7e0bef9a5f69444a7d5d465b7c9585645aeb2558d52f598c3b6f3a5be9fd",
+      "semantic_sha256": "7e7b6957b06a1f689eef7025a3034f867cf592031f1a8f2beadddd65a1e45703",
+      "exact_reload_replay": true
+    },
+    {
+      "fold": 4,
+      "joblib": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/calibrators/fold4_seed42_annotation_isotonic.joblib",
+      "joblib_sha256": "3fb8243898737431586ba541f705f962383674f9f48e1e42e1deb3f40954cd12",
+      "semantic_sha256": "d4b5d02d3f85501fa59ff3e2d7980ab508a0ca7f6ee60fc72f31ede0271f0d6e",
+      "exact_reload_replay": true
+    },
+    {
+      "fold": 5,
+      "joblib": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/calibrators/fold5_seed42_annotation_isotonic.joblib",
+      "joblib_sha256": "71c7d7a3b55b58a33ceedd1c17ca7c04ab1965cb2419ece30978c4343e2956d6",
+      "semantic_sha256": "9c4bbb92eed005052f175d4359749e7c04c4c7bef4d9dcf14be689b8048ea5e1",
+      "exact_reload_replay": true
+    },
+    {
+      "fold": 6,
+      "joblib": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/calibrators/fold6_seed42_annotation_isotonic.joblib",
+      "joblib_sha256": "05a19a1954aa9d75ca60bdbb1daa13a202a0bfb290b16850616c57027117a8ab",
+      "semantic_sha256": "568e2666a855960db3c6af0997b3ea79b5b934339448aceaf8f22eb6f4db19f6",
+      "exact_reload_replay": true
+    },
+    {
+      "fold": 7,
+      "joblib": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/calibrators/fold7_seed42_annotation_isotonic.joblib",
+      "joblib_sha256": "3326c64b6c17805c5f1e3eda41d7e63b59d1f2d2b2b4f9a655462c60563cd76b",
+      "semantic_sha256": "75987f19002db8cb7db0a1dfb9390952478cdc230399669bb7bf3bb6f8e008c6",
+      "exact_reload_replay": true
+    },
+    {
+      "fold": 8,
+      "joblib": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/calibrators/fold8_seed42_annotation_isotonic.joblib",
+      "joblib_sha256": "77ec5208eb63e5b37ac9ecbf6c7a9cf5fa4130024a70dc06fc0a58ed3f1b60b5",
+      "semantic_sha256": "06f1006404a52fcb2b8eb31ff794a2f3a835056718d3aefeb19f3c19417ee196",
+      "exact_reload_replay": true
+    },
+    {
+      "fold": 9,
+      "joblib": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/calibrators/fold9_seed42_annotation_isotonic.joblib",
+      "joblib_sha256": "4d5872e6e5426214e5bd43799019a8400c53ea22351d663f426cb6dd5d413c36",
+      "semantic_sha256": "8b555c8006d6bf148a64ab1123055a64725fa1c41da0429516dba066d2a785c0",
+      "exact_reload_replay": true
+    },
+    {
+      "fold": 10,
+      "joblib": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/calibrators/fold10_seed42_annotation_isotonic.joblib",
+      "joblib_sha256": "3cd00c1d5c1119f123297229a50976e3c54a309da0609b7d0db6d50f89b63824",
+      "semantic_sha256": "48b1262b9c0bb3043c07cc4775cfe3f279f6c0a4350bc6f5130cdc61c6dfc732",
+      "exact_reload_replay": true
+    }
+  ],
+  "truth_in_inference_channels": false,
+  "independent_data_used": false,
+  "durable_resume_supported": true,
+  "software": {
+    "python": "3.13.16 (main, Oct  1 2026, 15:40:24) [GCC 13.3.0]",
+    "torch": "2.14.1+cu130",
+    "cuda": "13.0",
+    "gpu": "Tesla T4",
+    "opencv": "4.14.0",
+    "numpy": "2.4.6",
+    "pandas": "2.2.3",
+    "platform": "Linux-6.6.159+-x86_64-with-glibc2.39"
+  }
+}

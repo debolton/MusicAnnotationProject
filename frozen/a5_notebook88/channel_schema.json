@@ -1,0 +1,78 @@
+{
+  "schema_version": "N88_CELL4_MEMORY_SAFE_V4_AUTHORITY",
+  "patch": 33,
+  "ordered_channels": [
+    "observed",
+    "local_normalised",
+    "reviewed_mask",
+    "mask_depth",
+    "ambiguous",
+    "p_annotation",
+    "p_print_value",
+    "p_print_available",
+    "edge",
+    "horizontal_support",
+    "vertical_support",
+    "compact_support"
+  ],
+  "tensor_channel_count": 12,
+  "tensor_dtype": "float32_at_patch_extraction",
+  "cached_channel_dtypes": {
+    "observed": "uint8",
+    "a1": "uint8",
+    "paper": "uint8",
+    "reviewed_mask": "uint8",
+    "ambiguous": "uint8",
+    "local_normalised": "uint8",
+    "mask_depth": "float32",
+    "p_annotation": "float32",
+    "p_print_value": "float32",
+    "p_print_available": "uint8",
+    "edge": "uint8",
+    "horizontal_support": "uint8",
+    "vertical_support": "uint8",
+    "compact_support": "uint8",
+    "authority": "uint8"
+  },
+  "normalisation": {
+    "observed": "divide_by_255_at_patch_extraction",
+    "local_normalised": "divide_by_255_at_patch_extraction",
+    "reviewed_mask": "cached_uint8_0_or_1_then_float32",
+    "mask_depth": "divide_by_patch_radius_and_clip_0_1_at_patch_extraction",
+    "ambiguous": "cached_uint8_0_or_1_then_float32",
+    "p_annotation": "native_float32_0_to_1",
+    "p_print_value": "native_float32_0_to_1_where_p_print_available_is_1; otherwise_0",
+    "p_print_available": "binary_1_where_source_p_print_is_finite_else_0",
+    "edge": "cached_uint8_0_or_1_then_float32",
+    "horizontal_support": "cached_uint8_0_or_1_then_float32",
+    "vertical_support": "cached_uint8_0_or_1_then_float32",
+    "compact_support": "cached_uint8_0_or_1_then_float32"
+  },
+  "binary_tensor_channels": [
+    "reviewed_mask",
+    "ambiguous",
+    "p_print_available",
+    "edge",
+    "horizontal_support",
+    "vertical_support",
+    "compact_support"
+  ],
+  "probability_tensor_channels": [
+    "p_annotation",
+    "p_print_value"
+  ],
+  "sparse_probability_representation": {
+    "source": "p_print",
+    "value_channel": "p_print_value",
+    "availability_channel": "p_print_available",
+    "unavailable_value_fill": 0.0,
+    "interpretation": "A zero p_print_value with availability zero means unavailable, not zero print probability."
+  },
+  "padding": "reflect-equivalent coordinate mapping during on-demand patch extraction",
+  "storage": {
+    "type": "per_page_npy_read_only_memmap",
+    "root": "/content/drive/MyDrive/MusicAnnotationProject/a5_contextual_safe_cleanup_v88/20261122_155756_notebook88_a5_training/observable_channel_cache",
+    "cache_version": "N88_CELL4_MEMORY_SAFE_V4_AUTHORITY"
+  },
+  "truth_derived_channels": []
+}

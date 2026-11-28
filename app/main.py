@@ -1,5 +1,4 @@
 from pathlib import Path
-from collections.abc import Mapping
 from datetime import datetime, timezone
 import io
 import json
@@ -23,8 +22,7 @@ from pydantic import BaseModel
 
 from . import store, yolo
 from .a1_operator import A1Operator
-from .a5_operator import A5Operator
-from .hf045_batch import BatchFailure, run_batch
+from .a5_n88_operator import A5N88Config, run_a5_n88
 from .final_evidence_upload import commit_final_approval_evidence
 
 
@@ -32,15 +30,15 @@ from .final_evidence_upload import commit_final_approval_evidence
 # Application identity and paths
 # ---------------------------------------------------------------------------
 
-APP_VERSION = "4.5.2"
+APP_VERSION = "4.7.0-alpha-n88"
 A1_POLICY_ID = "Notebook87-A1-from-frozen-V8.9"
 V78_POLICY_ID = "V7.8-geometry-t80"
-A5_POLICY_ID = "A5-v1-print-p0980-margin0960-run2"
+A5_N88_POLICY_ID = "Notebook88-contextual-safe-cleanup-alpha"
 
 ROOT = Path(__file__).resolve().parents[1]
 
 MODEL = ROOT / "frozen" / "yolo_detector" / "best.pt"
-A5_BUNDLE_DIR = ROOT / "frozen" / "a5_v1"
+A5_N88_BUNDLE_DIR = ROOT / "frozen" / "a5_notebook88"
 BATCH_OUTPUT_ROOT = ROOT / "batch_runs"
 STARTUP_EVIDENCE_DIR = ROOT / "startup_evidence"
 
@@ -48,63 +46,46 @@ BATCH_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 _model = None
 _a1_operator = None
-_correction_operator = None
+_a5_n88_config = None
 
-app = FastAPI(title="HF-04.5 Music Annotation")
+app = FastAPI(title="Music Annotation Project Alpha - A5-N88")
 app.mount(
     "/static",
     StaticFiles(directory=ROOT / "app" / "static"),
     name="static",
 )
 
-# A5 still runs and produces complete diagnostics.
-A5_SHADOW_MODE = True
-
-# Must remain False until a later A5 challenger passes the required gates.
-A5_APPLY_TO_OPERATIONAL_OUTPUT = False
-
+# A5-N88 is the Alpha correction stage. It cleans selected Notebook 87 A1
+# pixels to the frozen local-paper estimate. A1 remains the exact fallback.
+A5_N88_APPLY_TO_OPERATIONAL_OUTPUT = True
 OPERATIONAL_OUTPUT_POLICY_ID = (
-    A5_POLICY_ID
-    if A5_APPLY_TO_OPERATIONAL_OUTPUT
+    A5_N88_POLICY_ID
+    if A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
     else A1_POLICY_ID
 )
-
 CORRECTION_CONTRACT = (
-    "frozen-v8.9-notebook87-a1-operational-"
-    "plus-a5-v1-shadow"
+    "frozen-v8.9-notebook87-a1-plus-notebook88-safe-cleanup-alpha"
 )
-
 FINAL_PACKAGE_FILES = (
     "annotated_page.png",
     "reviewed_authoritative_seed_mask.png",
     "a1_corrected.png",
-    "a5_corrected.png",
+    "a5_n88_corrected.png",
     "operational_corrected.png",
-    "a5_decision_overlay.png",
-    "a5_live_pixel_diagnostics.csv",
-    "a5_final_print_diagnostics.csv",
-    "a5_diagnostic_export_manifest.json",
+    "a5_n88_decision_overlay.png",
+    "a5_n88_live_pixel_diagnostics.csv",
+    "a5_n88_final_clean_diagnostics.csv",
+    "a5_n88_diagnostic_export_manifest.json",
     "operational_correction_audit.json",
     "whole_page_review.json",
     "training_evidence_upload.json",
     "package_manifest.json",
 )
-
-A5_CHANNEL_ORDER = (
-    "obs",
-    "norm",
-    "mask",
-    "depth",
-    "horizontal",
-    "vertical",
-    "compact",
-    "preserve",
-    "remove",
-    "ambiguous",
-    "edge",
+A5_N88_CHANNEL_ORDER = (
+    "obs", "norm", "mask", "depth", "ambiguous",
+    "p_annotation", "p_print_value", "p_print_available",
+    "edge", "horizontal", "vertical", "compact",
 )
-
-
 # ---------------------------------------------------------------------------
 # API models
 # ---------------------------------------------------------------------------
@@ -123,10 +104,10 @@ class Approval(BaseModel):
 
     mask_status: str | None = None
     a1_status: str | None = None
-    a5_shadow_status: str | None = None
+    a5_n88_status: str | None = None
 
-    a5_failure_stage: str | None = None
-    a5_failure_type: str | None = None
+    a5_n88_failure_stage: str | None = None
+    a5_n88_failure_type: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -160,31 +141,18 @@ def get_a1_operator() -> A1Operator:
 
     return _a1_operator
 
-def get_correction_operator() -> A5Operator:
-    global _correction_operator
-
-    if _correction_operator is None:
-        _correction_operator = A5Operator(
-            bundle_dir=A5_BUNDLE_DIR,
+def get_a5_n88_config() -> A5N88Config:
+    global _a5_n88_config
+    if _a5_n88_config is None:
+        _a5_n88_config = A5N88Config(
+            bundle_dir=A5_N88_BUNDLE_DIR,
             device=get_device(),
-            run_startup_replay=True,
+            clean_threshold=0.995,
+            minimum_clean_run=2,
+            ensemble_reducer="mean",
+            channel_names=A5_N88_CHANNEL_ORDER,
         )
-
-        operator_channels = tuple(
-            _correction_operator.bundle.schema[
-                "channels"
-            ]
-        )
-
-        if operator_channels != A5_CHANNEL_ORDER:
-            raise RuntimeError(
-                "Application/frozen A5 channel-order mismatch: "
-                f"application={A5_CHANNEL_ORDER}, "
-                f"bundle={operator_channels}"
-            )
-
-    return _correction_operator
-
+    return _a5_n88_config
 
 # ---------------------------------------------------------------------------
 # Image helpers
@@ -330,672 +298,79 @@ def read_session_png(
 
     return image
 
-def a5_decision_overlay(
+def a5_n88_decision_overlay(
     observed: np.ndarray,
-    final: np.ndarray,
-    eligible_a5_v1: np.ndarray,
+    clean_mask: np.ndarray,
+    eligible_mask: np.ndarray,
     alpha: float = 0.55,
     display_radius: int = 1,
 ) -> np.ndarray:
-    """
-    Diagnostic A5-v1 decision overlay.
-
-    PRINT      -> green
-    ANNOTATION -> red
-    UNCERTAIN  -> yellow
-
-    display_radius=1 expands each classified pixel to 3x3 for
-    visibility only. It does NOT change the underlying decisions.
-    """
-
-    observed = require_image(
-        observed,
-        "A5 decision-overlay observed page",
-    )
-
-    final = np.asarray(final)
-
-    if final.shape != observed.shape:
-        raise RuntimeError(
-            "A5 decision-overlay shape mismatch: "
-            f"observed={observed.shape}, "
-            f"final={final.shape}"
-        )
-
-    eligible_a5_v1 = np.asarray(
-        eligible_a5_v1,
-        dtype=bool,
-    )
-
-    if eligible_a5_v1.shape != observed.shape:
-        raise RuntimeError(
-            "A5 decision-overlay eligibility shape mismatch"
-        )
-
-    print_mask = (
-        eligible_a5_v1
-        & (final == "PRINT")
-    )
-
-    annotation_mask = (
-        eligible_a5_v1
-        & (final == "ANNOTATION")
-    )
-
-    uncertain_mask = (
-        eligible_a5_v1
-        & (final == "UNCERTAIN")
-    )
-
-    # Optional visibility enlargement.
-    # This is DISPLAY ONLY.
+    """A5-N88 overlay: CLEAN green; eligible fallback yellow."""
+    observed = require_image(observed, "A5-N88 overlay observed page")
+    clean_mask = require_bool_mask(clean_mask, "A5-N88 CLEAN mask", observed.shape)
+    eligible_mask = require_bool_mask(eligible_mask, "A5-N88 eligibility", observed.shape)
+    keep_mask = eligible_mask & ~clean_mask
     if display_radius > 0:
-        kernel = np.ones(
-            (
-                2 * display_radius + 1,
-                2 * display_radius + 1,
-            ),
-            dtype=np.uint8,
-        )
-
-        print_display = (
-            cv2.dilate(
-                print_mask.astype(np.uint8),
-                kernel,
-            )
-            > 0
-        )
-
-        annotation_display = (
-            cv2.dilate(
-                annotation_mask.astype(np.uint8),
-                kernel,
-            )
-            > 0
-        )
-
-        uncertain_display = (
-            cv2.dilate(
-                uncertain_mask.astype(np.uint8),
-                kernel,
-            )
-            > 0
-        )
+        kernel = np.ones((2 * display_radius + 1, 2 * display_radius + 1), np.uint8)
+        clean_display = cv2.dilate(clean_mask.astype(np.uint8), kernel) > 0
+        keep_display = cv2.dilate(keep_mask.astype(np.uint8), kernel) > 0
     else:
-        print_display = print_mask
-        annotation_display = annotation_mask
-        uncertain_display = uncertain_mask
-
-    base = cv2.cvtColor(
-        observed,
-        cv2.COLOR_GRAY2BGR,
-    )
-
+        clean_display, keep_display = clean_mask, keep_mask
+    base = cv2.cvtColor(observed, cv2.COLOR_GRAY2BGR)
     colour = base.copy()
-
-    # OpenCV uses BGR.
-    colour[print_display] = (
-        0,
-        255,
-        0,
-    )
-
-    colour[annotation_display] = (
-        0,
-        0,
-        255,
-    )
-
-    # Yellow in BGR.
-    colour[uncertain_display] = (
-        0,
-        255,
-        255,
-    )
-
-    active = (
-        print_display
-        | annotation_display
-        | uncertain_display
-    )
-
+    colour[clean_display] = (0, 255, 0)
+    colour[keep_display] = (0, 255, 255)
+    active = clean_display | keep_display
     output = base.copy()
-
-    blended = cv2.addWeighted(
-        base,
-        1.0 - alpha,
-        colour,
-        alpha,
-        0,
-    )
-
+    blended = cv2.addWeighted(base, 1.0 - alpha, colour, alpha, 0)
     output[active] = blended[active]
-
     return output
 
 # ---------------------------------------------------------------------------
 # Operational result validation
 # ---------------------------------------------------------------------------
 
-def validate_operational_result(
-    observed: np.ndarray,
-    result: dict,
-) -> dict:
-    """
-    Validate the operational lineage:
-
-        V7.8 geometry_t80
-            -> frozen V8.9 corrected
-            -> Notebook 87 A1
-            -> A5-v1 final page
-
-    Notebook 87 A1:
-
-        A1 = frozen V8.9 corrected
-        A1[V7.8 AMBIGUOUS] = observed[V7.8 AMBIGUOUS]
-
-    A5-v1:
-
-        PRINT      -> exact observed byte
-        non-PRINT  -> exact A1 byte
-        outside authoritative mask -> exact observed byte
-    """
-
+def validate_operational_result(observed: np.ndarray, result: dict) -> dict:
     required = {
-        "mask",
-        "telea",
-        "paper",
-        "routes",
-        "geometry_t80",
-        "v8_9_corrected",
-        "a1",
-        "a5",
-        "eligible_a5_v1",
-        "p_print",
-        "provisional",
-        "final",
-        "print_mask",
+        "mask", "telea", "paper", "routes", "geometry_t80",
+        "v8_9_corrected", "a1", "a5_n88", "eligible_a5_n88",
+        "cleanup_probability", "clean_mask",
     }
-
-    missing = sorted(
-        required - set(result)
-    )
-
+    missing = sorted(required - set(result))
     if missing:
-        raise RuntimeError(
-            "Operational result omitted required fields: "
-            f"{missing}"
-        )
-
+        raise RuntimeError(f"Operational result omitted required fields: {missing}")
     shape = observed.shape
-
-    mask = require_bool_mask(
-        result["mask"],
-        "authoritative mask",
-        shape,
-    )
-
-    telea = require_image(
-        result["telea"],
-        "Telea diagnostic",
-        shape,
-    )
-
-    paper = require_image(
-        result["paper"],
-        "paper estimate",
-        shape,
-    )
-
-    geometry_t80 = require_image(
-        result["geometry_t80"],
-        "V7.8 geometry_t80",
-        shape,
-    )
-
-    v8_9_corrected = require_image(
-        result["v8_9_corrected"],
-        "frozen V8.9 corrected page",
-        shape,
-    )
-
-    a1 = require_image(
-        result["a1"],
-        "Notebook 87 A1",
-        shape,
-    )
-
-    a5 = require_image(
-        result["a5"],
-        "A5-v1 corrected page",
-        shape,
-    )
-
-    eligible_a5_v1 = require_bool_mask(
-        result["eligible_a5_v1"],
-        "A5-v1 eligibility",
-        shape,
-    )
-
-    print_mask = require_bool_mask(
-        result["print_mask"],
-        "A5-v1 PRINT mask",
-        shape,
-    )
-
+    mask = require_bool_mask(result["mask"], "authoritative mask", shape)
+    paper = require_image(result["paper"], "paper estimate", shape)
+    a1 = require_image(result["a1"], "Notebook 87 A1", shape)
+    a5_n88 = require_image(result["a5_n88"], "A5-N88 corrected page", shape)
+    eligible = require_bool_mask(result["eligible_a5_n88"], "A5-N88 eligibility", shape)
+    clean_mask = require_bool_mask(result["clean_mask"], "A5-N88 CLEAN mask", shape)
     routes = result["routes"]
-
-    if not isinstance(routes, dict):
-        raise RuntimeError(
-            "result['routes'] must be a dictionary"
-        )
-
-    required_routes = {
-        "preserve",
-        "remove",
-        "ambiguous",
-    }
-
-    missing_routes = sorted(
-        required_routes - set(routes)
-    )
-
-    if missing_routes:
-        raise RuntimeError(
-            "Operational result omitted V7.8 routes: "
-            f"{missing_routes}"
-        )
-
-    preserve = require_bool_mask(
-        routes["preserve"],
-        "V7.8 PRESERVE",
-        shape,
-    )
-
-    remove = require_bool_mask(
-        routes["remove"],
-        "V7.8 REMOVE",
-        shape,
-    )
-
-    ambiguous = require_bool_mask(
-        routes["ambiguous"],
-        "V7.8 AMBIGUOUS",
-        shape,
-    )
-
-    # ------------------------------------------------------------
-    # V7.8 integrity
-    # ------------------------------------------------------------
-
-    if np.any(preserve & remove):
-        raise RuntimeError(
-            "V7.8 PRESERVE and REMOVE overlap"
-        )
-
-    if np.any(preserve & ambiguous):
-        raise RuntimeError(
-            "V7.8 PRESERVE and AMBIGUOUS overlap"
-        )
-
-    if np.any(remove & ambiguous):
-        raise RuntimeError(
-            "V7.8 REMOVE and AMBIGUOUS overlap"
-        )
-
-    routed = (
-        preserve
-        | remove
-        | ambiguous
-    )
-
-    if not np.array_equal(
-        routed,
-        mask,
-    ):
-        raise RuntimeError(
-            "V7.8 routes do not exactly partition "
-            "the authoritative mask"
-        )
-
-    if np.any(
-        geometry_t80[preserve]
-        != observed[preserve]
-    ):
-        raise RuntimeError(
-            "V7.8 PRESERVE does not equal observed"
-        )
-
-    if np.any(
-        geometry_t80[remove]
-        != paper[remove]
-    ):
-        raise RuntimeError(
-            "V7.8 REMOVE does not equal paper"
-        )
-
-    if np.any(
-        geometry_t80[ambiguous]
-        != telea[ambiguous]
-    ):
-        raise RuntimeError(
-            "V7.8 AMBIGUOUS does not equal Telea"
-        )
-
-    if np.any(
-        geometry_t80[~mask]
-        != observed[~mask]
-    ):
-        raise RuntimeError(
-            "V7.8 changed pixels outside authority"
-        )
-
-    # ------------------------------------------------------------
-    # Notebook 87 A1 integrity
-    # ------------------------------------------------------------
-
-    if np.any(
-        a1[ambiguous]
-        != observed[ambiguous]
-    ):
-        raise RuntimeError(
-            "Notebook 87 A1 AMBIGUOUS bytes do not "
-            "equal observed"
-        )
-
-    if np.any(
-        a1[~ambiguous]
-        != v8_9_corrected[~ambiguous]
-    ):
-        raise RuntimeError(
-            "Notebook 87 A1 differs from frozen V8.9 "
-            "outside AMBIGUOUS"
-        )
-
-    if np.any(
-        a1[~mask]
-        != observed[~mask]
-    ):
-        raise RuntimeError(
-            "Notebook 87 A1 changed pixels outside "
-            "the authoritative mask"
-        )
-
-    a1_delta_from_v89 = (
-        a1 != v8_9_corrected
-    )
-
-    expected_a1_delta = (
-        ambiguous
-        & (
-            observed
-            != v8_9_corrected
-        )
-    )
-
-    if not np.array_equal(
-        a1_delta_from_v89,
-        expected_a1_delta,
-    ):
-        raise RuntimeError(
-            "Notebook 87 A1 delta is not exactly the "
-            "effective AMBIGUOUS-to-observed restoration"
-        )
-
-    # ------------------------------------------------------------
-    # A5 eligibility
-    # ------------------------------------------------------------
-
-    expected_eligible = (
-        mask
-        & (observed < 200)
-        & ~preserve
-    )
-
-    if not np.array_equal(
-        eligible_a5_v1,
-        expected_eligible,
-    ):
-        raise RuntimeError(
-            "A5-v1 eligible population mismatch"
-        )
-
-    if np.any(
-        print_mask
-        & ~eligible_a5_v1
-    ):
-        raise RuntimeError(
-            "A5-v1 PRINT exists outside eligibility"
-        )
-
-    # ------------------------------------------------------------
-    # A5 output, now falling back to A1
-    # ------------------------------------------------------------
-
-    if np.any(
-        a5[print_mask]
-        != observed[print_mask]
-    ):
-        raise RuntimeError(
-            "A5-v1 PRINT output does not equal observed"
-        )
-
-    if np.any(
-        a5[~print_mask]
-        != a1[~print_mask]
-    ):
-        raise RuntimeError(
-            "A5-v1 non-PRINT output differs from "
-            "Notebook 87 A1"
-        )
-
-    if np.any(
-        a5[~mask]
-        != observed[~mask]
-    ):
-        raise RuntimeError(
-            "A5-v1 changed pixels outside authority"
-        )
-
-    changed_from_a1 = (
-        a5 != a1
-    )
-
-    expected_changed_from_a1 = (
-        print_mask
-        & (
-            observed != a1
-        )
-    )
-
-    if not np.array_equal(
-        changed_from_a1,
-        expected_changed_from_a1,
-    ):
-        raise RuntimeError(
-            "A5-v1 delta does not equal effective PRINT "
-            "restoration from A1"
-        )
-
-    if np.any(
-        changed_from_a1
-        & (a5 != observed)
-    ):
-        raise RuntimeError(
-            "A5-v1 changed byte does not equal observed"
-        )
-
-    # ------------------------------------------------------------
-    # Probability and decision integrity
-    # ------------------------------------------------------------
-
-    p_print = np.asarray(
-        result["p_print"]
-    )
-
-    provisional = np.asarray(
-        result["provisional"]
-    )
-
-    final = np.asarray(
-        result["final"]
-    )
-
-    for name, array in (
-        ("p_print", p_print),
-        ("provisional", provisional),
-        ("final", final),
-    ):
-        if array.shape != shape:
-            raise RuntimeError(
-                f"{name} shape mismatch: "
-                f"expected {shape}, found {array.shape}"
-            )
-
-    if not np.isfinite(
-        p_print[eligible_a5_v1]
-    ).all():
-        raise RuntimeError(
-            "p_print contains non-finite eligible values"
-        )
-
-    if np.any(
-        p_print[eligible_a5_v1] < 0.0
-    ) or np.any(
-        p_print[eligible_a5_v1] > 1.0
-    ):
-        raise RuntimeError(
-            "p_print lies outside 0..1"
-        )
-
-    valid_classes = {
-        "PRINT",
-        "ANNOTATION",
-        "UNCERTAIN",
-        "INELIGIBLE",
-    }
-
-    for name, decisions in (
-        ("provisional", provisional),
-        ("final", final),
-    ):
-        unexpected = (
-            set(decisions.astype(str).ravel())
-            - valid_classes
-        )
-
-        if unexpected:
-            raise RuntimeError(
-                f"Unexpected {name} classes: "
-                f"{sorted(unexpected)}"
-            )
-
-        if np.any(
-            decisions[eligible_a5_v1]
-            == "INELIGIBLE"
-        ):
-            raise RuntimeError(
-                f"Eligible coordinate is {name} INELIGIBLE"
-            )
-
-        if np.any(
-            decisions[~eligible_a5_v1]
-            != "INELIGIBLE"
-        ):
-            raise RuntimeError(
-                f"{name} decision exists outside eligibility"
-            )
-
-    if not np.array_equal(
-        print_mask,
-        final == "PRINT",
-    ):
-        raise RuntimeError(
-            "PRINT mask does not equal final PRINT decisions"
-        )
-
-    if np.any(
-        (final == "PRINT")
-        & (provisional != "PRINT")
-    ):
-        raise RuntimeError(
-            "Run filter manufactured a new PRINT decision"
-        )
-
-    if np.any(
-        (provisional == "ANNOTATION")
-        & (final != "ANNOTATION")
-    ):
-        raise RuntimeError(
-            "Run filter altered an ANNOTATION decision"
-        )
-
-    # Preserve each real processing stage. Do not overwrite A1.
-    result["mask"] = mask
-    result["telea"] = telea
-    result["paper"] = paper
-
-    result["routes"] = {
-        **routes,
-        "preserve": preserve,
-        "remove": remove,
-        "ambiguous": ambiguous,
-    }
-
-    result["geometry_t80"] = geometry_t80
-    result["v8_9_corrected"] = v8_9_corrected
-    result["a1"] = a1
-    result["a5"] = a5
-
-    result["eligible_a5_v1"] = eligible_a5_v1
-    result["p_print"] = p_print
-    result["provisional"] = provisional
-    result["final"] = final
-    result["print_mask"] = print_mask
-
-    # ------------------------------------------------------------
-    # Operational publication decision
-    #
-    # A5 continues to run as a complete shadow proposal, but A1 is
-    # the published correction until A5 has separately passed the
-    # required safety and promotion gates.
-    # ------------------------------------------------------------
-
-    if A5_APPLY_TO_OPERATIONAL_OUTPUT:
-        operational = a5.copy()
-        operational_stage = "A5_V1"
-    else:
-        operational = a1.copy()
-        operational_stage = "NOTEBOOK87_A1"
-
-    if np.any(
-        operational[~mask]
-        != observed[~mask]
-    ):
-        raise RuntimeError(
-            "Operational output changed pixels outside "
-            "the authoritative mask"
-        )
-
-    if not A5_APPLY_TO_OPERATIONAL_OUTPUT:
-        if not np.array_equal(
-            operational,
-            a1,
-        ):
-            raise RuntimeError(
-                "A5 shadow mode operational output "
-                "does not exactly equal Notebook 87 A1"
-            )
-
-    result["operational"] = operational
-    result["operational_stage"] = operational_stage
-    result["a5_shadow_mode"] = bool(
-        A5_SHADOW_MODE
-    )
-    result["a5_applied_to_operational_output"] = bool(
-        A5_APPLY_TO_OPERATIONAL_OUTPUT
-    )
-
+    ambiguous = require_bool_mask(routes["ambiguous"], "V7.8 AMBIGUOUS", shape)
+    if not np.array_equal(eligible, mask & ambiguous):
+        raise RuntimeError("A5-N88 eligibility is not exactly authoritative AMBIGUOUS")
+    if np.any(clean_mask & ~eligible):
+        raise RuntimeError("A5-N88 CLEAN exists outside eligibility")
+    if np.any(a5_n88[clean_mask] != paper[clean_mask]):
+        raise RuntimeError("A5-N88 CLEAN output does not equal paper estimate")
+    if np.any(a5_n88[~clean_mask] != a1[~clean_mask]):
+        raise RuntimeError("A5-N88 non-CLEAN output differs from Notebook 87 A1")
+    if np.any(a5_n88[~mask] != observed[~mask]):
+        raise RuntimeError("A5-N88 changed pixels outside authority")
+    probability = np.asarray(result["cleanup_probability"], dtype=np.float32)
+    if probability.shape != shape:
+        raise RuntimeError("A5-N88 cleanup probability shape mismatch")
+    if eligible.any() and not np.isfinite(probability[eligible]).all():
+        raise RuntimeError("A5-N88 cleanup probability is non-finite on eligibility")
+    operational = a5_n88.copy() if A5_N88_APPLY_TO_OPERATIONAL_OUTPUT else a1.copy()
+    result.update({
+        "mask": mask, "paper": paper, "a1": a1, "a5_n88": a5_n88,
+        "eligible_a5_n88": eligible, "clean_mask": clean_mask,
+        "cleanup_probability": probability, "operational": operational,
+        "operational_stage": "A5_N88" if A5_N88_APPLY_TO_OPERATIONAL_OUTPUT else "NOTEBOOK87_A1",
+        "a5_n88_applied_to_operational_output": bool(A5_N88_APPLY_TO_OPERATIONAL_OUTPUT),
+    })
     return result
 
 # ---------------------------------------------------------------------------
@@ -1314,738 +689,150 @@ def session_mask(sid: str):
 def authorise(sid: str):
     session = store.load(sid)
     directory = store.folder(sid)
-
-    observed = require_image(
-        session["gray"],
-        "observed session page",
-    )
-
-    reviewed_seed = require_image(
-        session["working"],
-        "reviewed authoritative seed",
-        observed.shape,
-    )
-
-    write_png(
-        directory / "reviewed_authoritative_seed_mask.png",
-        reviewed_seed,
-    )
-
+    observed = require_image(session["gray"], "observed session page")
+    reviewed_seed = require_image(session["working"], "reviewed authoritative seed", observed.shape)
+    write_png(directory / "reviewed_authoritative_seed_mask.png", reviewed_seed)
     try:
-        # --------------------------------------------------------
-        # Exact Notebook 87 A1 lineage:
-        #
-        # reviewed seed
-        #   -> frozen V8.9
-        #   -> restore V7.8 AMBIGUOUS coordinates to observed
-        #   -> Notebook 87 A1
-        # --------------------------------------------------------
-
         a1_result = get_a1_operator().run(
             observed=observed,
             reviewed_seed=reviewed_seed,
             page=sid,
         )
-
-        # --------------------------------------------------------
-        # A5-v1 operates from Notebook 87 A1.
-        # --------------------------------------------------------
-
-        result = get_correction_operator().run_from_a1(
+        mask = require_bool_mask(a1_result["mask"], "authoritative mask", observed.shape)
+        routes = a1_result["routes"]
+        ambiguous = require_bool_mask(routes["ambiguous"], "V7.8 AMBIGUOUS", observed.shape)
+        horizontal = require_bool_mask(routes["horizontal"], "horizontal support", observed.shape)
+        vertical = require_bool_mask(routes["vertical"], "vertical support", observed.shape)
+        compact = require_bool_mask(routes["compact"], "compact support", observed.shape)
+        paper = require_image(a1_result["paper"], "paper estimate", observed.shape)
+        a1 = require_image(a1_result["a1"], "Notebook 87 A1", observed.shape)
+        p_annotation = np.asarray(session["confidence"], dtype=np.float32)
+        if p_annotation.shape != observed.shape:
+            raise RuntimeError("YOLO confidence map shape mismatch")
+        n88 = run_a5_n88(
             observed=observed,
-            reviewed_seed=reviewed_seed,
-            a1_result=a1_result,
-            page=sid,
+            a1_output=a1,
+            authoritative_mask=mask,
+            ambiguous_mask=ambiguous,
+            paper_estimate=paper,
+            horizontal_support=horizontal,
+            vertical_support=vertical,
+            compact_support=compact,
+            p_annotation=p_annotation,
+            p_print_value=np.zeros(observed.shape, np.float32),
+            p_print_available=np.zeros(observed.shape, np.float32),
+            eligible_mask=mask & ambiguous,
+            config=get_a5_n88_config(),
         )
-
-        result = validate_operational_result(
-            observed=observed,
-            result=result,
-        )
-
-        mask = result["mask"]
-        routes = result["routes"]
-
-        geometry_t80 = result["geometry_t80"]
-        v8_9_corrected = result["v8_9_corrected"]
-        a1 = result["a1"]
-        a5 = result["a5"]
-
+        result = dict(a1_result)
+        result.update({
+            "a5_n88": n88.output,
+            "eligible_a5_n88": n88.eligible_mask,
+            "cleanup_probability": n88.cleanup_probability,
+            "fold_probability_min": n88.fold_probability_min,
+            "fold_probability_max": n88.fold_probability_max,
+            "fold_probability_std": n88.fold_probability_std,
+            "clean_mask": n88.clean_mask,
+            "a5_n88_diagnostics": n88.diagnostics,
+            "a5_n88_fold_files": n88.fold_files,
+        })
+        result = validate_operational_result(observed, result)
         operational = result["operational"]
-        operational_stage = result["operational_stage"]
-
-        print_mask = result["print_mask"]
-        eligible_a5_v1 = result["eligible_a5_v1"]
-
-        p_print = result["p_print"]
-        provisional = result["provisional"]
-        final = result["final"]
-
-        preserve = routes["preserve"]
-        remove = routes["remove"]
-        ambiguous = routes["ambiguous"]
-
-        outside_mask = ~mask
-        non_print = ~print_mask
-
-        # --------------------------------------------------------
-        # Stage deltas
-        # --------------------------------------------------------
-
-        a1_delta_from_v89 = (
-            a1 != v8_9_corrected
-        )
-
-        expected_a1_delta_from_v89 = (
-            ambiguous
-            & (
-                observed != v8_9_corrected
-            )
-        )
-
-        a5_changed_from_a1 = (
-            a5 != a1
-        )
-
-        expected_a5_changed_from_a1 = (
-            print_mask
-            & (
-                observed != a1
-            )
-        )
-
-        a5_changed_from_v78 = (
-            a5 != geometry_t80
-        )
-
-        # --------------------------------------------------------
-        # Decision overlay
-        # --------------------------------------------------------
-
-        decision_overlay = a5_decision_overlay(
-            observed=observed,
-            final=final,
-            eligible_a5_v1=eligible_a5_v1,
-            alpha=0.55,
-            display_radius=1,
-        )
-
-        # --------------------------------------------------------
-        # Persist only the curated A1 -> A5 review artefacts.
+        a5_n88 = result["a5_n88"]
+        clean_mask = result["clean_mask"]
+        eligible = result["eligible_a5_n88"]
+        probability = result["cleanup_probability"]
+        overlay_image = a5_n88_decision_overlay(observed, clean_mask, eligible)
         write_png(directory / "a1_corrected.png", a1)
-        write_png(directory / "a5_corrected.png", a5)
+        write_png(directory / "a5_n88_corrected.png", a5_n88)
         write_png(directory / "operational_corrected.png", operational)
-        write_png(
-            directory / "a5_decision_overlay.png",
-            decision_overlay,
-        )
+        write_png(directory / "a5_n88_decision_overlay.png", overlay_image)
 
-        # Export the temporary pixel-level A5 diagnostics directly from
-        # the in-memory result. Full-page NPY/NPZ intermediates are not
-        # written to disk.
         import csv
-
-        
-        channels = result.get("channels")
-        if not isinstance(channels, Mapping):
-            raise RuntimeError("A5 result omitted the channel mapping")
-        missing_channels = [
-            name for name in A5_CHANNEL_ORDER if name not in channels
-        ]
-        if missing_channels:
-            raise RuntimeError(
-                f"A5 result omitted diagnostic channels: {missing_channels}"
-            )
-        raw_probability = np.asarray(
-            result["raw_p_print"], dtype=np.float32
-        )
-        calibrated_probability = np.asarray(
-            result["p_print"], dtype=np.float32
-        )
-        yolo_confidence = np.asarray(
-            session["confidence"], dtype=np.float32
-        )
-        diagnostic_arrays = {
-            "raw_p_print": raw_probability,
-            "p_print": calibrated_probability,
-            "provisional": provisional,
-            "final": final,
-            "yolo_confidence": yolo_confidence,
-            **{name: np.asarray(channels[name]) for name in A5_CHANNEL_ORDER},
-        }
-        mismatched = {
-            name: list(value.shape)
-            for name, value in diagnostic_arrays.items()
-            if value.shape != observed.shape
-        }
-        if mismatched:
-            raise RuntimeError(
-                "A5 diagnostic arrays do not share the page shape: "
-                f"{mismatched}"
-            )
-        eligible_diagnostic = (
-            np.isfinite(raw_probability)
-            & np.isfinite(calibrated_probability)
-        )
-        eligible_y, eligible_x = np.where(eligible_diagnostic)
-        all_csv_path = directory / "a5_live_pixel_diagnostics.csv"
-        final_csv_path = directory / "a5_final_print_diagnostics.csv"
-        fieldnames = [
-            "y", "x", "raw_p_print", "calibrated_p_print",
-            "provisional_decision", "final_decision",
-            "yolo_confidence", "obs_source_byte",
-            "norm_source_byte", "obs_cnn_centre",
-            "norm_cnn_centre", "mask_cnn_centre",
-            "depth_cnn_centre", "horizontal_cnn_centre",
-            "vertical_cnn_centre", "compact_cnn_centre",
-            "preserve_cnn_centre", "remove_cnn_centre",
-            "ambiguous_cnn_centre", "edge_cnn_centre",
-        ]
-        final_print_rows = 0
-        with all_csv_path.open(
-            "w", newline="", encoding="utf-8"
-        ) as all_handle, final_csv_path.open(
-            "w", newline="", encoding="utf-8"
-        ) as final_handle:
-            all_writer = csv.DictWriter(all_handle, fieldnames=fieldnames)
-            final_writer = csv.DictWriter(final_handle, fieldnames=fieldnames)
-            all_writer.writeheader()
-            final_writer.writeheader()
-            for y, x in zip(eligible_y, eligible_x):
-                y, x = int(y), int(x)
-                provisional_value = str(provisional[y, x])
-                final_value = str(final[y, x])
+        all_path = directory / "a5_n88_live_pixel_diagnostics.csv"
+        clean_path = directory / "a5_n88_final_clean_diagnostics.csv"
+        fields = ["y", "x", "cleanup_probability", "clean_decision", "yolo_confidence", "observed_byte", "a1_byte", "paper_byte", "a5_n88_byte"]
+        ys, xs = np.where(eligible)
+        clean_rows = 0
+        with all_path.open("w", newline="", encoding="utf-8") as ah, clean_path.open("w", newline="", encoding="utf-8") as ch:
+            aw, cw = csv.DictWriter(ah, fieldnames=fields), csv.DictWriter(ch, fieldnames=fields)
+            aw.writeheader(); cw.writeheader()
+            for y, x in zip(ys, xs):
                 row = {
-                    "y": y,
-                    "x": x,
-                    "raw_p_print": float(raw_probability[y, x]),
-                    "calibrated_p_print": float(
-                        calibrated_probability[y, x]
-                    ),
-                    "provisional_decision": provisional_value,
-                    "final_decision": final_value,
-                    "yolo_confidence": float(yolo_confidence[y, x]),
-                    "obs_source_byte": float(channels["obs"][y, x]),
-                    "norm_source_byte": float(channels["norm"][y, x]),
-                    "obs_cnn_centre": float(channels["obs"][y, x]) / 255.0,
-                    "norm_cnn_centre": float(channels["norm"][y, x]) / 255.0,
-                    "mask_cnn_centre": float(channels["mask"][y, x]),
-                    "depth_cnn_centre": float(channels["depth"][y, x]),
-                    "horizontal_cnn_centre": float(
-                        channels["horizontal"][y, x]
-                    ),
-                    "vertical_cnn_centre": float(
-                        channels["vertical"][y, x]
-                    ),
-                    "compact_cnn_centre": float(
-                        channels["compact"][y, x]
-                    ),
-                    "preserve_cnn_centre": float(
-                        channels["preserve"][y, x]
-                    ),
-                    "remove_cnn_centre": float(
-                        channels["remove"][y, x]
-                    ),
-                    "ambiguous_cnn_centre": float(
-                        channels["ambiguous"][y, x]
-                    ),
-                    "edge_cnn_centre": float(channels["edge"][y, x]),
+                    "y": int(y), "x": int(x),
+                    "cleanup_probability": float(probability[y, x]),
+                    "clean_decision": bool(clean_mask[y, x]),
+                    "yolo_confidence": float(p_annotation[y, x]),
+                    "observed_byte": int(observed[y, x]),
+                    "a1_byte": int(a1[y, x]),
+                    "paper_byte": int(paper[y, x]),
+                    "a5_n88_byte": int(a5_n88[y, x]),
                 }
-                all_writer.writerow(row)
-                if final_value == "PRINT":
-                    final_writer.writerow(row)
-                    final_print_rows += 1
-
+                aw.writerow(row)
+                if clean_mask[y, x]:
+                    cw.writerow(row); clean_rows += 1
         diagnostic_manifest = {
             "created_utc": datetime.now(timezone.utc).isoformat(),
+            "policy_id": A5_N88_POLICY_ID,
             "page_shape": list(observed.shape),
-            "channel_order": A5_CHANNEL_ORDER,
-            "patch_size": 33,
-            "padding": "reflect",
-            "normalisation": {
-                "obs": "source value divided by 255",
-                "norm": "source value divided by 255",
-                "other_channels": "native float32 value",
-            },
-            "eligible_rows": int(eligible_diagnostic.sum()),
-            "final_print_rows": int(final_print_rows),
-            "files": {
-                "all_eligible_pixels": all_csv_path.name,
-                "final_print_pixels": final_csv_path.name,
-            },
-            "full_page_numpy_arrays_exported": False,
+            "channel_order": A5_N88_CHANNEL_ORDER,
+            "ensemble_reducer": "mean",
+            "clean_threshold": 0.995,
+            "minimum_clean_run": 2,
+            "eligible_rows": int(eligible.sum()),
+            "final_clean_rows": int(clean_rows),
+            "fold_files": list(n88.fold_files),
+            "diagnostics": n88.diagnostics,
         }
-        (directory / "a5_diagnostic_export_manifest.json").write_text(
-            json.dumps(diagnostic_manifest, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        # Whole-page operational audit
-        # --------------------------------------------------------
-
+        (directory / "a5_n88_diagnostic_export_manifest.json").write_text(json.dumps(diagnostic_manifest, indent=2), encoding="utf-8")
         audit = {
-            "created_utc": (
-                datetime.now(timezone.utc).isoformat()
-            ),
-
+            "created_utc": datetime.now(timezone.utc).isoformat(),
             "session_id": sid,
             "app_version": APP_VERSION,
             "correction_contract": CORRECTION_CONTRACT,
-
-            # ----------------------------------------------------
-            # V7.8 identity
-            # ----------------------------------------------------
-
             "v7_8_policy_id": V78_POLICY_ID,
-            "v7_8_baseline": "geometry_t80",
-
-            # ----------------------------------------------------
-            # Notebook 87 A1 identity
-            # ----------------------------------------------------
-
-            "a1_policy_id": result.get(
-                "a1_policy_id",
-                A1_POLICY_ID,
-            ),
-
-            "v89_operator_sha256": result.get(
-                "v89_operator_sha256",
-            ),
-
-            "a1_source": (
-                "frozen/v8_9/v8_9_operator.py"
-            ),
-
-            "a1_assembly": (
-                "V8.9 corrected with every V7.8 "
-                "AMBIGUOUS coordinate restored to "
-                "the exact observed byte"
-            ),
-
-                        # ----------------------------------------------------
-            # Operational publication identity
-            # ----------------------------------------------------
-
-            "operational_output_stage": (
-                operational_stage
-            ),
-
-            "operational_output_file": (
-                "operational_corrected.png"
-            ),
-
-            "a5_shadow_mode": bool(
-                A5_SHADOW_MODE
-            ),
-
-            "a5_applied_to_operational_output": bool(
-                A5_APPLY_TO_OPERATIONAL_OUTPUT
-            ),
-
-            "operational_changed_from_a1_pixels": int(
-                np.sum(
-                    operational != a1
-                )
-            ),
-
-            "operational_outside_mask_drift": int(
-                np.sum(
-                    operational[outside_mask]
-                    != observed[outside_mask]
-                )
-            ),
-
-            # ----------------------------------------------------
-            # A5-v1 identity
-            # ----------------------------------------------------
-
-            "a5_action": (
-                "COPY_EXACT_OBSERVED_BYTE"
-            ),
-
-            "a5_fallback": (
-                "Notebook87 A1"
-            ),
-
-            "a5_policy_id": result.get(
-                "a5_policy_id",
-                A5_POLICY_ID,
-            ),
-
-            "a5_bundle_id": result.get(
-                "bundle_id"
-            ),
-
-            "a5_model_sha256": result.get(
-                "model_sha256"
-            ),
-
-            "a5_calibrator_sha256": result.get(
-                "calibrator_sha256"
-            ),
-
-            # ----------------------------------------------------
-            # Population counts
-            # ----------------------------------------------------
-
-            "prepared_mask_pixels": int(
-                mask.sum()
-            ),
-
-            "preserve_pixels": int(
-                preserve.sum()
-            ),
-
-            "remove_pixels": int(
-                remove.sum()
-            ),
-
-            "ambiguous_pixels": int(
-                ambiguous.sum()
-            ),
-
-            "a1_changed_from_v8_9_pixels": int(
-                a1_delta_from_v89.sum()
-            ),
-
-            "a5_eligible_pixels": int(
-                eligible_a5_v1.sum()
-            ),
-
-            "a5_final_print_pixels": int(
-                print_mask.sum()
-            ),
-
-            "a5_effectively_changed_from_a1_pixels": int(
-                a5_changed_from_a1.sum()
-            ),
-
-            "a5_changed_from_v7_8_pixels": int(
-                a5_changed_from_v78.sum()
-            ),
-
-            "a5_final_annotation_pixels": int(
-                np.sum(
-                    final[eligible_a5_v1]
-                    == "ANNOTATION"
-                )
-            ),
-
-            "a5_final_uncertain_pixels": int(
-                np.sum(
-                    final[eligible_a5_v1]
-                    == "UNCERTAIN"
-                )
-            ),
-
-            # ----------------------------------------------------
-            # V7.8 integrity
-            # ----------------------------------------------------
-
-            "v7_8_outside_mask_drift": int(
-                np.sum(
-                    geometry_t80[outside_mask]
-                    != observed[outside_mask]
-                )
-            ),
-
-            # ----------------------------------------------------
-            # V8.9 integrity
-            # ----------------------------------------------------
-
-            "v8_9_outside_mask_drift": int(
-                np.sum(
-                    v8_9_corrected[outside_mask]
-                    != observed[outside_mask]
-                )
-            ),
-
-            # ----------------------------------------------------
-            # Notebook 87 A1 integrity
-            # ----------------------------------------------------
-
-            "a1_outside_mask_drift": int(
-                np.sum(
-                    a1[outside_mask]
-                    != observed[outside_mask]
-                )
-            ),
-
-            "a1_ambiguous_not_equal_observed": int(
-                np.sum(
-                    a1[ambiguous]
-                    != observed[ambiguous]
-                )
-            ),
-
-            "a1_non_ambiguous_v89_regression": int(
-                np.sum(
-                    a1[~ambiguous]
-                    != v8_9_corrected[~ambiguous]
-                )
-            ),
-
-            "a1_unexpected_delta_from_v89": int(
-                np.sum(
-                    a1_delta_from_v89
-                    & ~expected_a1_delta_from_v89
-                )
-            ),
-
-            "a1_missing_effective_ambiguous_restoration": int(
-                np.sum(
-                    expected_a1_delta_from_v89
-                    & ~a1_delta_from_v89
-                )
-            ),
-
-            # ----------------------------------------------------
-            # A5-v1 integrity
-            # ----------------------------------------------------
-
-            "a5_outside_mask_drift": int(
-                np.sum(
-                    a5[outside_mask]
-                    != observed[outside_mask]
-                )
-            ),
-
-            "a5_non_print_a1_regression": int(
-                np.sum(
-                    a5[non_print]
-                    != a1[non_print]
-                )
-            ),
-
-            "a5_print_not_equal_observed": int(
-                np.sum(
-                    a5[print_mask]
-                    != observed[print_mask]
-                )
-            ),
-
-            "a5_changed_byte_not_equal_observed": int(
-                np.sum(
-                    a5_changed_from_a1
-                    & (
-                        a5 != observed
-                    )
-                )
-            ),
-
-            "a5_unexpected_changed_byte": int(
-                np.sum(
-                    a5_changed_from_a1
-                    & ~expected_a5_changed_from_a1
-                )
-            ),
-
-            "a5_missing_effective_print_change": int(
-                np.sum(
-                    expected_a5_changed_from_a1
-                    & ~a5_changed_from_a1
-                )
-            ),
-
-            "print_outside_eligibility": int(
-                np.sum(
-                    print_mask
-                    & ~eligible_a5_v1
-                )
-            ),
-
-            "print_outside_authoritative_mask": int(
-                np.sum(
-                    print_mask
-                    & ~mask
-                )
-            ),
-
-            # ----------------------------------------------------
-            # Runtime provenance
-            # ----------------------------------------------------
-
-            "telea_contributes_to_v7_8_ambiguous": bool(
-                ambiguous.any()
-            ),
-
+            "a1_policy_id": result.get("a1_policy_id", A1_POLICY_ID),
+            "a5_n88_policy_id": A5_N88_POLICY_ID,
+            "a5_n88_action": "REPLACE_SELECTED_A1_PIXEL_WITH_LOCAL_PAPER_ESTIMATE",
+            "a5_n88_fallback": "Notebook87 A1",
+            "operational_output_stage": result["operational_stage"],
+            "a5_n88_applied_to_operational_output": bool(A5_N88_APPLY_TO_OPERATIONAL_OUTPUT),
+            "prepared_mask_pixels": int(mask.sum()),
+            "ambiguous_pixels": int(ambiguous.sum()),
+            "a5_n88_eligible_pixels": int(eligible.sum()),
+            "a5_n88_final_clean_pixels": int(clean_mask.sum()),
+            "a5_n88_changed_from_a1_pixels": int(np.sum(a5_n88 != a1)),
+            "a5_n88_outside_mask_drift": int(np.sum(a5_n88[~mask] != observed[~mask])),
+            "a5_n88_non_clean_a1_regression": int(np.sum(a5_n88[~clean_mask] != a1[~clean_mask])),
+            "a5_n88_clean_not_equal_paper": int(np.sum(a5_n88[clean_mask] != paper[clean_mask])),
             "clean_image_used_at_runtime": False,
-
-            "historical_notebook87_a1_operational": True,
-
-            "historical_notebook91_drives_output": False,
+            "notebook88_alpha_test": True,
         }
-
-        zero_fields = [
-            "v7_8_outside_mask_drift",
-            "v8_9_outside_mask_drift",
-
-            "a1_outside_mask_drift",
-            "a1_ambiguous_not_equal_observed",
-            "a1_non_ambiguous_v89_regression",
-            "a1_unexpected_delta_from_v89",
-            "a1_missing_effective_ambiguous_restoration",
-
-            "a5_outside_mask_drift",
-            "a5_non_print_a1_regression",
-            "a5_print_not_equal_observed",
-            "a5_changed_byte_not_equal_observed",
-            "a5_unexpected_changed_byte",
-            "a5_missing_effective_print_change",
-
-            "operational_outside_mask_drift",
-
-            "print_outside_eligibility",
-            "print_outside_authoritative_mask",
-        ]
-
-        failures = {
-            key: audit[key]
-            for key in zero_fields
-            if audit[key] != 0
-        }
-
-        if (
-            not A5_APPLY_TO_OPERATIONAL_OUTPUT
-            and audit[
-                "operational_changed_from_a1_pixels"
-            ] != 0
-        ):
-            failures[
-                "operational_changed_from_a1_pixels"
-            ] = audit[
-                "operational_changed_from_a1_pixels"
-            ]
-
+        zero_fields = ["a5_n88_outside_mask_drift", "a5_n88_non_clean_a1_regression", "a5_n88_clean_not_equal_paper"]
+        failures = {k: audit[k] for k in zero_fields if audit[k] != 0}
         if failures:
-            raise RuntimeError(
-                "Operational correction contract failed: "
-                + json.dumps(
-                    failures,
-                    sort_keys=True,
-                )
-            )
-
-        (
-            directory
-            / "operational_correction_audit.json"
-        ).write_text(
-            json.dumps(
-                audit,
-                indent=2,
-            )
-        )
-
+            raise RuntimeError("A5-N88 correction contract failed: " + json.dumps(failures, sort_keys=True))
+        (directory / "operational_correction_audit.json").write_text(json.dumps(audit, indent=2), encoding="utf-8")
     except Exception as exc:
-        failure = {
-            "utc": datetime.now(
-                timezone.utc
-            ).isoformat(),
-
-            "session_id": sid,
-            "contract": CORRECTION_CONTRACT,
-
-            "error_type": type(exc).__name__,
-            "error": str(exc),
-        }
-
-        (
-            directory
-            / "correction_failure.json"
-        ).write_text(
-            json.dumps(
-                failure,
-                indent=2,
-            )
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Operational correction failed: "
-                f"{type(exc).__name__}: {exc}"
-            ),
-        ) from exc
-
+        failure = {"utc": datetime.now(timezone.utc).isoformat(), "session_id": sid, "contract": CORRECTION_CONTRACT, "error_type": type(exc).__name__, "error": str(exc)}
+        (directory / "correction_failure.json").write_text(json.dumps(failure, indent=2), encoding="utf-8")
+        raise HTTPException(status_code=500, detail=f"A5-N88 correction failed: {type(exc).__name__}: {exc}") from exc
     return {
         "ok": True,
-
-        "corrected_url": (
-            f"/api/session/{sid}/result"
-        ),
-
-        "operational_stage": (
-            audit[
-                "operational_output_stage"
-            ]
-        ),
-
-        "a5_shadow_mode": (
-            audit[
-                "a5_shadow_mode"
-            ]
-        ),
-
-        "a5_applied_to_operational_output": (
-            audit[
-                "a5_applied_to_operational_output"
-            ]
-        ),
-
-        "a5_shadow_url": (
-            f"/api/session/{sid}/a5-shadow"
-        ),
-
-        "original_url": (
-            f"/api/session/{sid}/image"
-        ),
-
+        "corrected_url": f"/api/session/{sid}/result",
+        "operational_stage": audit["operational_output_stage"],
+        "a5_n88_url": f"/api/session/{sid}/a5-n88",
+        "original_url": f"/api/session/{sid}/image",
         "diagnostics": {
-            "prepared_mask_pixels": audit[
-                "prepared_mask_pixels"
-            ],
-
-            "preserve_pixels": audit[
-                "preserve_pixels"
-            ],
-
-            "remove_pixels": audit[
-                "remove_pixels"
-            ],
-
-            "ambiguous_pixels": audit[
-                "ambiguous_pixels"
-            ],
-
-            "a5_eligible_pixels": audit[
-                "a5_eligible_pixels"
-            ],
-
-            "a5_print_pixels": audit[
-                "a5_final_print_pixels"
-            ],
-
-            "a1_changed_from_v8_9": audit[
-                "a1_changed_from_v8_9_pixels"
-            ],
-
-            "a5_changed_from_a1": audit[
-                "a5_effectively_changed_from_a1_pixels"
-            ],
-
-            "a5_changed_from_v7_8": audit[
-                "a5_changed_from_v7_8_pixels"
-            ],
-
-            "outside_mask_drift": audit[
-                "a5_outside_mask_drift"
-            ],
-
-            "non_print_a1_regression": audit[
-                "a5_non_print_a1_regression"
-            ],
+            "prepared_mask_pixels": audit["prepared_mask_pixels"],
+            "ambiguous_pixels": audit["ambiguous_pixels"],
+            "a5_n88_eligible_pixels": audit["a5_n88_eligible_pixels"],
+            "a5_n88_clean_pixels": audit["a5_n88_final_clean_pixels"],
+            "a5_n88_changed_from_a1": audit["a5_n88_changed_from_a1_pixels"],
+            "outside_mask_drift": audit["a5_n88_outside_mask_drift"],
+            "non_clean_a1_regression": audit["a5_n88_non_clean_a1_regression"],
         },
     }
-
 
 @app.get("/api/session/{sid}/result")
 def result(sid: str):
@@ -2056,12 +843,12 @@ def result(sid: str):
         )
     )
 
-@app.get("/api/session/{sid}/a5-shadow")
-def a5_shadow_result(sid: str):
+@app.get("/api/session/{sid}/a5-n88")
+def a5_n88_result(sid: str):
     return png(
         read_session_png(
             sid,
-            "a5_corrected.png",
+            "a5_n88_corrected.png",
         )
     )
 
@@ -2073,9 +860,9 @@ def diagnostic(
     names = {
         "a1": "a1_corrected.png",
         "operational": "operational_corrected.png",
-        "a5_shadow": "a5_corrected.png",
-        "a5": "a5_corrected.png",
-        "decisions": "a5_decision_overlay.png",
+        "a5_n88": "a5_n88_corrected.png",
+        "a5_n88": "a5_n88_corrected.png",
+        "decisions": "a5_n88_decision_overlay.png",
         "m5": "operational_corrected.png",
     }
     filename = names.get(name)
@@ -2128,7 +915,7 @@ def approval(
     for field_name, field_value in (
         ("mask_status", value.mask_status),
         ("a1_status", value.a1_status),
-        ("a5_shadow_status", value.a5_shadow_status),
+        ("a5_n88_status", value.a5_n88_status),
     ):
         if (
             field_value is not None
@@ -2177,29 +964,29 @@ def approval(
             )
         ),
 
-        "a5_shadow_status": (
-            value.a5_shadow_status
+        "a5_n88_status": (
+            value.a5_n88_status
             or "not_reviewed"
         ),
 
-        "a5_failure_stage": (
-            value.a5_failure_stage
+        "a5_n88_failure_stage": (
+            value.a5_n88_failure_stage
         ),
 
-        "a5_failure_type": (
-            value.a5_failure_type
+        "a5_n88_failure_type": (
+            value.a5_n88_failure_type
         ),
 
         "note": value.note,
 
         "operational_output_stage": (
-            "A5_V1"
-            if A5_APPLY_TO_OPERATIONAL_OUTPUT
+            "A5_N88"
+            if A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
             else "NOTEBOOK87_A1"
         ),
 
         "a5_applied_to_operational_output": bool(
-            A5_APPLY_TO_OPERATIONAL_OUTPUT
+            A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
         ),
     }
 
@@ -2368,7 +1155,7 @@ def finish(
             diagnostic_manifest_path.read_text(encoding="utf-8")
         )
         eligible_rows = int(diagnostic_manifest["eligible_rows"])
-        final_print_rows = int(diagnostic_manifest["final_print_rows"])
+        final_clean_rows = int(diagnostic_manifest["final_clean_rows"])
     except Exception as exc:
         raise HTTPException(
             status_code=409,
@@ -2410,7 +1197,7 @@ def finish(
     )
 
     a1_operator = get_a1_operator()
-    a5_operator = get_correction_operator()
+    a5_n88_config = get_a5_n88_config()
 
     manifest = {
         "created_utc": (
@@ -2477,39 +1264,39 @@ def finish(
         ),
 
         "operational_output_stage": (
-            "A5_V1"
-            if A5_APPLY_TO_OPERATIONAL_OUTPUT
+            "A5_N88"
+            if A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
             else "NOTEBOOK87_A1"
         ),
 
-        "a5_shadow_mode": bool(A5_SHADOW_MODE),
+        "a5_n88_mode": bool(False),
 
         "a5_applied_to_operational_output": bool(
-            A5_APPLY_TO_OPERATIONAL_OUTPUT
+            A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
         ),
 
-        "a5_shadow_proposal_file": (
-            "a5_corrected.png"
+        "a5_n88_proposal_file": (
+            "a5_n88_corrected.png"
         ),
 
         # --------------------------------------------------------
-        # A5-v1
+        # A5-N88
         # --------------------------------------------------------
 
         "a5_policy_id": getattr(
-            a5_operator,
+            a5_n88_config,
             "a5_policy_id",
-            A5_POLICY_ID,
+            A5_N88_POLICY_ID,
         ),
 
         "a5_bundle_id": getattr(
-            a5_operator,
+            a5_n88_config,
             "bundle_id",
             None,
         ),
 
-        "a5_print_action": (
-            "COPY_EXACT_OBSERVED_BYTE"
+        "a5_clean_action": (
+            "REPLACE_WITH_LOCAL_PAPER_ESTIMATE"
         ),
 
         "a5_non_print_fallback": (
@@ -2523,7 +1310,7 @@ def finish(
         "a5_channel_diagnostic_csv_exported": True,
 
         "a5_channel_order": (
-            A5_CHANNEL_ORDER
+            A5_N88_CHANNEL_ORDER
         ),
 
         "a5_patch_size": 33,
@@ -2578,16 +1365,16 @@ def finish(
             "a1_status"
         ),
 
-        "a5_shadow_status": review.get(
-            "a5_shadow_status"
+        "a5_n88_status": review.get(
+            "a5_n88_status"
         ),
 
         "failure_stage": review.get(
-            "a5_failure_stage"
+            "a5_n88_failure_stage"
         ),
 
         "failure_type": review.get(
-            "a5_failure_type"
+            "a5_n88_failure_type"
         ),
 
         "notes": review.get(
@@ -2596,13 +1383,13 @@ def finish(
         ),
 
         "operational_output_stage": (
-            "A5_V1"
-            if A5_APPLY_TO_OPERATIONAL_OUTPUT
+            "A5_N88"
+            if A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
             else "NOTEBOOK87_A1"
         ),
 
         "a5_applied_to_operational_output": bool(
-            A5_APPLY_TO_OPERATIONAL_OUTPUT
+            A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
         ),
     }
 
@@ -2728,15 +1515,15 @@ def finish(
         ),
 
         "operational_output_stage": (
-            "A5_V1"
-            if A5_APPLY_TO_OPERATIONAL_OUTPUT
+            "A5_N88"
+            if A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
             else "NOTEBOOK87_A1"
         ),
 
-        "a5_shadow_mode": bool(A5_SHADOW_MODE),
+        "a5_n88_mode": bool(False),
 
         "a5_applied_to_operational_output": bool(
-            A5_APPLY_TO_OPERATIONAL_OUTPUT
+            A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
         ),
 
         "training_evidence": (
@@ -2747,8 +1534,8 @@ def finish(
             eligible_rows
         ),
 
-        "a5_final_print_diagnostic_rows": int(
-            final_print_rows
+        "a5_final_clean_diagnostic_rows": int(
+            final_clean_rows
         ),
 
         "download_url": str(
@@ -2826,7 +1613,7 @@ def download_evidence_zip_compatibility(
 @app.get("/health")
 def health():
     a1_operator = get_a1_operator()
-    a5_operator = get_correction_operator()
+    a5_n88_config = get_a5_n88_config()
 
     return {
         "ok": True,
@@ -2881,36 +1668,36 @@ def health():
 
         "operational_output_stage": (
             "NOTEBOOK87_A1"
-            if not A5_APPLY_TO_OPERATIONAL_OUTPUT
-            else "A5_V1"
+            if not A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
+            else "A5_N88"
         ),
 
-        "a5_shadow_mode": bool(
-            A5_SHADOW_MODE
+        "a5_n88_mode": bool(
+            False
         ),
 
         "a5_applied_to_operational_output": bool(
-            A5_APPLY_TO_OPERATIONAL_OUTPUT
+            A5_N88_APPLY_TO_OPERATIONAL_OUTPUT
         ),
 
         # --------------------------------------------------------
-        # A5-v1
+        # A5-N88
         # --------------------------------------------------------
 
         "a5_policy_id": getattr(
-            a5_operator,
+            a5_n88_config,
             "a5_policy_id",
-            A5_POLICY_ID,
+            A5_N88_POLICY_ID,
         ),
 
         "bundle_id": getattr(
-            a5_operator,
+            a5_n88_config,
             "bundle_id",
             None,
         ),
 
-        "a5_print_action": (
-            "COPY_EXACT_OBSERVED_BYTE"
+        "a5_clean_action": (
+            "REPLACE_WITH_LOCAL_PAPER_ESTIMATE"
         ),
 
         "a5_non_print_fallback": (
@@ -3063,7 +1850,7 @@ def startup_evidence_status():
 #     run_batch(
 #         upload=bytes,
 #         a1_operator=A1Operator,
-#         operator=A5Operator,
+#         operator=A5N88Config,
 #         output_root=Path,
 #     )
 #
@@ -3071,119 +1858,14 @@ def startup_evidence_status():
 # update that file before enabling batch processing.
 # ---------------------------------------------------------------------------
 
-@app.post(
-    "/batch-v89-a1-a5",
-    response_class=FileResponse,
-)
-async def batch_v89_a1_a5(
-    file: UploadFile = File(...),
-):
-    """
-    Process one HF-04.5.1 ZIP through:
-
-        frozen V7.8
-        -> frozen V8.9
-        -> Notebook 87 A1
-        -> A5-v1 observed-PRINT processing
-
-    The returned ZIP contains page artefacts, audit records
-    and the batch manifest.
-    """
-
-    filename = Path(
-        file.filename or ""
-    ).name
-
-    if not filename.lower().endswith(
-        ".zip"
-    ):
-        await file.close()
-
-        raise HTTPException(
-            status_code=400,
-            detail="Upload one .zip file",
-        )
-
-    try:
-        upload = await file.read()
-
-        if not upload:
-            raise HTTPException(
-                status_code=400,
-                detail="Uploaded ZIP is empty",
-            )
-
-        output = run_batch(
-            upload=upload,
-
-            a1_operator=get_a1_operator(),
-
-            operator=get_correction_operator(),
-
-            output_root=BATCH_OUTPUT_ROOT,
-        )
-
-        output = Path(output)
-
-        if not output.is_file():
-            raise BatchFailure(
-                "Batch completed without creating "
-                "its output ZIP"
-            )
-
-        if output.stat().st_size == 0:
-            raise BatchFailure(
-                "Batch output ZIP is empty"
-            )
-
-        return FileResponse(
-            path=str(output),
-
-            filename=(
-                "hf045_v89_a1_a5_results.zip"
-            ),
-
-            media_type="application/zip",
-
-            headers={
-                "Cache-Control": "no-store",
-            },
-        )
-
-    except HTTPException:
-        raise
-
-    except BatchFailure as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=str(exc),
-        ) from exc
-
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "HF-04.5.1 batch processing failed: "
-                f"{type(exc).__name__}: {exc}"
-            ),
-        ) from exc
-
-    finally:
-        await file.close()
-
-
-# ---------------------------------------------------------------------------
-# Legacy batch URL compatibility
-# ---------------------------------------------------------------------------
-
-@app.post(
-    "/batch-v78-a5",
-    response_class=FileResponse,
-    include_in_schema=False,
-)
-async def batch_v78_a5_compatibility(
-    file: UploadFile = File(...),
-):
-    return await batch_v89_a1_a5(
-        file
+@app.post("/batch-v89-a1-a5-n88", response_class=FileResponse)
+async def batch_v89_a1_a5_n88(file: UploadFile = File(...)):
+    await file.close()
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Batch processing is disabled in the first A5-N88 Alpha build. "
+            "hf045_batch.py still implements the the legacy operator contract "
+            "and must be converted separately before this endpoint is enabled."
+        ),
     )
