@@ -750,18 +750,29 @@ class A5Operator:
 
                 expected_provisional = np.load(
                     expected_provisional_path,
-                    allow_pickle=False,
+                    allow_pickle=True,
                 )
 
                 expected_final = np.load(
                     expected_final_path,
-                    allow_pickle=False,
+                    allow_pickle=True,
                 )
 
                 expected_a5 = cv2.imread(
                     str(expected_a5_path),
                     cv2.IMREAD_GRAYSCALE,
                 )
+
+                expected_provisional = np.asarray(
+                    expected_provisional,
+                    dtype="<U10",
+                )
+
+                expected_final = np.asarray(
+                    expected_final,
+                    dtype="<U10",
+                )
+
             except Exception as exc:
                 raise A5OperatorError(
                     f"Cannot load expected replay output for "
