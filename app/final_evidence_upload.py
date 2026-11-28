@@ -75,7 +75,7 @@ CORRECTION_STATUSES = {
 FAILURE_STAGES = {
     "MASK",
     "A1",
-    "A5",
+    "A5_N88",
     "OTHER",
 }
 
@@ -84,8 +84,8 @@ FAILURE_TYPES = {
     "MASK_MISSED_ANNOTATION",
     "A1_DAMAGED_PRINT",
     "A1_RETAINED_ANNOTATION",
-    "A5_FALSE_PRINT_RESTORED_ANNOTATION",
-    "A5_MISSED_PRINT",
+    "A5_N88_FALSE_PRINT_RESTORED_ANNOTATION",
+    "A5_N88_MISSED_PRINT",
     "COSMETIC_FAILURE",
     "OTHER",
 }
@@ -469,21 +469,21 @@ def correction_evidence_id(
     sample_id: str,
     operational_path: Path,
     a1_path: Path,
-    a5_path: Path,
+    a5_n88_path: Path,
     review: dict,
     operational_policy_id: str,
     a1_policy_id: str,
-    a5_policy_id: str,
+    a5_n88_policy_id: str,
 ) -> str:
     digest = hashlib.sha256()
     digest.update(str(sample_id).encode("utf-8"))
     digest.update(sha256_file(operational_path).encode("ascii"))
     digest.update(sha256_file(a1_path).encode("ascii"))
-    digest.update(sha256_file(a5_path).encode("ascii"))
+    digest.update(sha256_file(a5_n88_path).encode("ascii"))
     digest.update(canonical_json_bytes(review))
     digest.update(str(operational_policy_id).encode("utf-8"))
     digest.update(str(a1_policy_id).encode("utf-8"))
-    digest.update(str(a5_policy_id).encode("utf-8"))
+    digest.update(str(a5_n88_policy_id).encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -538,11 +538,11 @@ def stage_detector_training_object(
             "operational_output_policy_id"
         ),
         "a1_policy_id": manifest.get("a1_policy_id"),
-        "a5_policy_id": manifest.get("a5_policy_id"),
-        "a5_bundle_id": manifest.get("a5_bundle_id"),
+        "a5_n88_policy_id": manifest.get("a5_n88_policy_id"),
+        "a5_n88_bundle_id": manifest.get("a5_n88_bundle_id"),
         "training_eligibility": {
             "detector_training": True,
-            "a5_pixel_training": False,
+            "a5_n88_pixel_training": False,
             "independent_holdout": False,
         },
         "review": review,
@@ -575,11 +575,11 @@ def stage_correction_object(
         filenames = [
             "operational_corrected.png",
             "a1_corrected.png",
-            "a5_corrected.png",
-            "a5_decision_overlay.png",
-            "a5_live_pixel_diagnostics.csv",
-            "a5_final_print_diagnostics.csv",
-            "a5_diagnostic_export_manifest.json",
+            "a5_n88_corrected.png",
+            "a5_n88_decision_overlay.png",
+            "a5_n88_live_pixel_diagnostics.csv",
+            "a5_n88_final_print_diagnostics.csv",
+            "a5_n88_diagnostic_export_manifest.json",
             "operational_correction_audit.json",
             "whole_page_review.json",
         ]
@@ -591,11 +591,11 @@ def stage_correction_object(
             "reviewed_authoritative_seed_mask.png",
             "operational_corrected.png",
             "a1_corrected.png",
-            "a5_corrected.png",
-            "a5_decision_overlay.png",
-            "a5_live_pixel_diagnostics.csv",
-            "a5_final_print_diagnostics.csv",
-            "a5_diagnostic_export_manifest.json",
+            "a5_n88_corrected.png",
+            "a5_n88_decision_overlay.png",
+            "a5_n88_live_pixel_diagnostics.csv",
+            "a5_n88_final_print_diagnostics.csv",
+            "a5_n88_diagnostic_export_manifest.json",
             "operational_correction_audit.json",
             "whole_page_review.json",
         ]
@@ -625,24 +625,24 @@ def stage_correction_object(
         "operational_output_stage": review.get(
             "operational_output_stage"
         ),
-        "a5_applied_to_operational_output": bool(
-            review.get("a5_applied_to_operational_output", False)
+        "a5_n88_applied_to_operational_output": bool(
+            review.get("a5_n88_applied_to_operational_output", False)
         ),
-        "a5_output_role": (
+        "a5_n88_output_role": (
             "OPERATIONAL"
-            if review.get("a5_applied_to_operational_output", False)
+            if review.get("a5_n88_applied_to_operational_output", False)
             else "SHADOW_PROPOSAL"
         ),
         "operational_output_policy_id": manifest.get(
             "operational_output_policy_id"
         ),
         "a1_policy_id": manifest.get("a1_policy_id"),
-        "a5_policy_id": manifest.get("a5_policy_id"),
-        "a5_bundle_id": manifest.get("a5_bundle_id"),
+        "a5_n88_policy_id": manifest.get("a5_n88_policy_id"),
+        "a5_n88_bundle_id": manifest.get("a5_n88_bundle_id"),
         "files": copied_files,
         "training_eligibility": {
             "detector_training": True,
-            "a5_pixel_training": False,
+            "a5_n88_pixel_training": False,
             "correction_monitoring": correction_status == "approved",
             "correction_failure_research": correction_status == "rejected",
         },
@@ -844,7 +844,7 @@ def commit_final_approval_evidence(
         "operational_corrected.png",
     )
     a1_path = required_path(directory, "a1_corrected.png")
-    a5_path = required_path(directory, "a5_corrected.png")
+    a5_n88_path = required_path(directory, "a5_n88_corrected.png")
 
     sample_id = training_sample_id(
         annotated,
@@ -855,13 +855,13 @@ def commit_final_approval_evidence(
         sample_id=sample_id,
         operational_path=operational_path,
         a1_path=a1_path,
-        a5_path=a5_path,
+        a5_n88_path=a5_n88_path,
         review=review,
         operational_policy_id=str(
             package_manifest.get("operational_output_policy_id", "")
         ),
         a1_policy_id=str(package_manifest.get("a1_policy_id", "")),
-        a5_policy_id=str(package_manifest.get("a5_policy_id", "")),
+        a5_n88_policy_id=str(package_manifest.get("a5_n88_policy_id", "")),
     )
 
     staging_root = directory / "_final_evidence_staging"
@@ -920,8 +920,8 @@ def commit_final_approval_evidence(
             "operational_output_stage": review.get(
                 "operational_output_stage"
             ),
-            "a5_applied_to_operational_output": bool(
-                review.get("a5_applied_to_operational_output", False)
+            "a5_n88_applied_to_operational_output": bool(
+                review.get("a5_n88_applied_to_operational_output", False)
             ),
             "detector_training": detector_receipt,
             "correction_evidence": correction_receipt,

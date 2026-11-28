@@ -1145,10 +1145,10 @@ def finish(
     )
 
     # ------------------------------------------------------------
-    # A5 diagnostic CSVs were written directly from the in-memory
+    # A5_N88 diagnostic CSVs were written directly from the in-memory
     # authorisation result. No full-page NPY/NPZ intermediates are needed.
     diagnostic_manifest_path = (
-        directory / "a5_diagnostic_export_manifest.json"
+        directory / "a5_n88_diagnostic_export_manifest.json"
     )
     try:
         diagnostic_manifest = json.loads(
@@ -1159,7 +1159,7 @@ def finish(
     except Exception as exc:
         raise HTTPException(
             status_code=409,
-            detail=f"A5 diagnostic export is unavailable: {exc}",
+            detail=f"A5_N88 diagnostic export is unavailable: {exc}",
         ) from exc
 
     required = [
