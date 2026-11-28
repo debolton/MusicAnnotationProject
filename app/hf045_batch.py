@@ -918,7 +918,6 @@ def run_batch(
                     reviewed_seed=seed,
                     a1_result=a1_result,
                     page=key,
-                    batch=512,
                 )
 
             except Exception as exc:
