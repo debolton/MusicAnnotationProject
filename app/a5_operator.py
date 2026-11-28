@@ -21,6 +21,7 @@ observed page.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -97,6 +98,14 @@ class A5Bundle:
     schema: Mapping[str, Any]
     model_config: Mapping[str, Any]
     device: torch.device
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -243,13 +252,14 @@ def eligible_coordinates(
     return tuple(a.astype(np.int32, copy=False) for a in np.where(eligible))
 
 
-def score_coordinates(
+def score_coordinates_with_raw(
     bundle: A5Bundle,
     padded: Mapping[str, np.ndarray],
     ys: Sequence[int] | np.ndarray,
     xs: Sequence[int] | np.ndarray,
     batch_size: int = 512,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return frozen raw and calibrated PRINT probabilities."""
     ys = np.asarray(ys, dtype=np.int32)
     xs = np.asarray(xs, dtype=np.int32)
     if ys.shape != xs.shape or ys.ndim != 1:
@@ -257,30 +267,51 @@ def score_coordinates(
     if batch_size < 1:
         raise A5OperatorError("batch_size must be positive")
     if len(ys) == 0:
-        return np.empty(0, dtype=np.float64)
+        empty = np.empty(0, dtype=np.float64)
+        return empty, empty.copy()
 
     patch = int(bundle.schema["patch"])
     names = bundle.schema["channels"]
-    calibrated: list[np.ndarray] = []
+    raw_parts: list[np.ndarray] = []
+    calibrated_parts: list[np.ndarray] = []
     with torch.inference_mode():
         for start in range(0, len(ys), batch_size):
             stop = min(len(ys), start + batch_size)
             tensors = np.stack(
                 [
                     np.stack(
-                        [padded[name][y : y + patch, x : x + patch] for name in names]
+                        [padded[name][y:y + patch, x:x + patch] for name in names]
                     )
                     for y, x in zip(ys[start:stop], xs[start:stop])
                 ]
             ).astype(np.float32, copy=False)
             xb = torch.from_numpy(tensors).to(bundle.device)
-            raw = torch.softmax(bundle.model(xb), dim=1)[:, 1].cpu().numpy()
+            raw = (
+                torch.softmax(bundle.model(xb), dim=1)[:, 1]
+                .cpu().numpy().astype(np.float64, copy=False)
+            )
             probability = np.asarray(bundle.calibrator.predict(raw), dtype=np.float64)
+            if not np.isfinite(raw).all():
+                raise A5OperatorError("Frozen model produced non-finite raw probabilities")
             if not np.isfinite(probability).all():
                 raise A5OperatorError("Frozen calibrator produced non-finite probabilities")
-            calibrated.append(probability)
-    return np.concatenate(calibrated)
+            raw_parts.append(raw)
+            calibrated_parts.append(probability)
+    return np.concatenate(raw_parts), np.concatenate(calibrated_parts)
 
+
+def score_coordinates(
+    bundle: A5Bundle,
+    padded: Mapping[str, np.ndarray],
+    ys: Sequence[int] | np.ndarray,
+    xs: Sequence[int] | np.ndarray,
+    batch_size: int = 512,
+) -> np.ndarray:
+    """Compatibility wrapper returning calibrated PRINT probabilities only."""
+    _, calibrated = score_coordinates_with_raw(
+        bundle, padded, ys, xs, batch_size=batch_size
+    )
+    return calibrated
 
 def make_decisions(
     probability: np.ndarray,
@@ -374,7 +405,7 @@ def _decision_mismatch_count(
 class A5Operator:
     def __init__(
         self,
-        bundle_dir,
+        bundle_dir=None,
         *,
         device=None,
         batch_size=512,
@@ -401,6 +432,16 @@ class A5Operator:
         # Use the resolved bundle directory from the loaded bundle.
         self.bundle_dir = self.bundle.root
         self.device = self.bundle.device
+        self.a5_policy_id = str(self.bundle.policy.get("policy_id", ""))
+        self.bundle_id = str(
+            self.bundle.policy.get("bundle_id")
+            or self.bundle.model_config.get("bundle_id")
+            or self.a5_policy_id
+        )
+        self.model_sha256 = _sha256_file(self.bundle_dir / "model.pt")
+        self.calibrator_sha256 = _sha256_file(
+            self.bundle_dir / "isotonic_calibrator.joblib"
+        )
 
         self.startup_replay: dict[str, Any] | None = None
 
@@ -520,6 +561,153 @@ class A5Operator:
             eligible_x=xs,
             print_mask=print_mask,
         )
+
+    @staticmethod
+    def _a1_value(a1_result: Any, *names: str, required: bool = True) -> Any:
+        for name in names:
+            if isinstance(a1_result, Mapping) and name in a1_result:
+                return a1_result[name]
+            if hasattr(a1_result, name):
+                return getattr(a1_result, name)
+        if required:
+            raise A5OperatorError(
+                f"A1 result omitted required field; accepted names={names}"
+            )
+        return None
+
+    def run_from_a1(
+        self,
+        observed: np.ndarray,
+        reviewed_seed: np.ndarray,
+        a1_result: Any,
+        page: str | None = None,
+    ) -> dict[str, Any]:
+        """Run A5-v1 from an exact Notebook 87 A1 result.
+
+        This is the application-facing adapter used by ``main.py``. It builds
+        the frozen 11 A5 channels from A1/V7.8 evidence, runs A5, expands the
+        coordinate results to full-page audit arrays, and preserves the full
+        upstream lineage in the returned dictionary.
+        """
+        observed_u8 = _as_2d("observed", observed).astype(np.uint8, copy=False)
+        shape = observed_u8.shape
+        seed_u8 = _as_2d("reviewed_seed", reviewed_seed, shape).astype(
+            np.uint8, copy=False
+        )
+        result_observed = self._a1_value(a1_result, "observed", "obs", required=False)
+        if result_observed is not None and not np.array_equal(
+            _as_2d("a1_result observed", result_observed, shape).astype(np.uint8),
+            observed_u8,
+        ):
+            raise A5OperatorError("A1 result observed page differs from supplied observed page")
+
+        mask = _as_2d(
+            "authoritative_mask",
+            self._a1_value(a1_result, "authoritative_mask", "mask"),
+            shape,
+        ) > 0
+        a1 = _as_2d("a1", self._a1_value(a1_result, "a1", "corrected"), shape).astype(
+            np.uint8, copy=False
+        )
+        normalised = _as_2d(
+            "normalised", self._a1_value(a1_result, "normalised", "norm"), shape
+        ).astype(np.uint8, copy=False)
+        preserve = _as_2d("preserve", self._a1_value(a1_result, "preserve"), shape) > 0
+        remove = _as_2d("remove", self._a1_value(a1_result, "remove"), shape) > 0
+        ambiguous = _as_2d("ambiguous", self._a1_value(a1_result, "ambiguous"), shape) > 0
+        horizontal = _as_2d("horizontal", self._a1_value(a1_result, "horizontal"), shape) > 0
+        vertical = _as_2d("vertical", self._a1_value(a1_result, "vertical"), shape) > 0
+        compact = _as_2d("compact", self._a1_value(a1_result, "compact"), shape) > 0
+        if not np.array_equal(preserve | remove | ambiguous, mask):
+            raise A5OperatorError("A1 V7.8 routes do not partition the authoritative mask")
+        if np.any(a1[~mask] != observed_u8[~mask]):
+            raise A5OperatorError("A1 contains outside-mask drift")
+
+        channels = {
+            "obs": observed_u8,
+            "norm": normalised,
+            "mask": mask.astype(np.uint8),
+            "depth": cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5),
+            "horizontal": horizontal.astype(np.uint8),
+            "vertical": vertical.astype(np.uint8),
+            "compact": compact.astype(np.uint8),
+            "preserve": preserve.astype(np.uint8),
+            "remove": remove.astype(np.uint8),
+            "ambiguous": ambiguous.astype(np.uint8),
+            "edge": (cv2.Canny(observed_u8, 70, 170) > 0).astype(np.uint8),
+        }
+        padded, _ = prepare_channels(channels, self.bundle.schema)
+        ys, xs = eligible_coordinates(observed_u8, mask, preserve)
+        raw, probability = score_coordinates_with_raw(
+            self.bundle, padded, ys, xs, batch_size=self.batch_size
+        )
+        provisional_vector, final_vector = make_decisions(
+            probability, self.bundle.policy, shape, ys, xs
+        )
+        image, print_mask = assemble(
+            observed_u8, a1, mask, ys, xs, final_vector
+        )
+
+        raw_map = np.full(shape, np.nan, dtype=np.float32)
+        probability_map = np.full(shape, np.nan, dtype=np.float32)
+        provisional_map = np.full(shape, "INELIGIBLE", dtype="<U10")
+        final_map = np.full(shape, "INELIGIBLE", dtype="<U10")
+        raw_map[ys, xs] = raw.astype(np.float32)
+        probability_map[ys, xs] = probability.astype(np.float32)
+        provisional_map[ys, xs] = provisional_vector
+        final_map[ys, xs] = final_vector
+        eligible_map = np.zeros(shape, dtype=bool)
+        eligible_map[ys, xs] = True
+
+        routes = self._a1_value(a1_result, "routes", required=False)
+        if not isinstance(routes, Mapping):
+            routes = {}
+        routes = {
+            **dict(routes),
+            "preserve": preserve,
+            "remove": remove,
+            "ambiguous": ambiguous,
+            "horizontal": horizontal,
+            "vertical": vertical,
+            "compact": compact,
+            "normalised": normalised,
+        }
+        output = dict(a1_result) if isinstance(a1_result, Mapping) else {}
+        output.update({
+            "page": page,
+            "observed": observed_u8,
+            "reviewed_seed": seed_u8,
+            "mask": mask,
+            "authoritative_mask": mask,
+            "telea": self._a1_value(a1_result, "telea"),
+            "paper": self._a1_value(a1_result, "paper"),
+            "routes": routes,
+            "geometry_t80": self._a1_value(
+                a1_result, "geometry_t80", "baseline_v78"
+            ),
+            "v8_9_corrected": self._a1_value(a1_result, "v8_9_corrected", "v8_9"),
+            "a1": a1,
+            "a5": image,
+            "channels": channels,
+            "eligible_a5_v1": eligible_map,
+            "raw_p_print": raw_map,
+            "p_print": probability_map,
+            "provisional": provisional_map,
+            "final": final_map,
+            "print_mask": print_mask,
+            "a5_policy_id": self.a5_policy_id,
+            "bundle_id": self.bundle_id,
+            "model_sha256": self.model_sha256,
+            "calibrator_sha256": self.calibrator_sha256,
+        })
+        for name in (
+            "a1_policy_id", "v89_operator_sha256",
+            "p_print_bundle_root", "remove_bundle_root", "a1_assembly"
+        ):
+            value = self._a1_value(a1_result, name, required=False)
+            if value is not None:
+                output[name] = value
+        return output
 
     def _resolve_replay_dir(self) -> Path:
         """
@@ -750,29 +938,18 @@ class A5Operator:
 
                 expected_provisional = np.load(
                     expected_provisional_path,
-                    allow_pickle=True,
+                    allow_pickle=False,
                 )
 
                 expected_final = np.load(
                     expected_final_path,
-                    allow_pickle=True,
+                    allow_pickle=False,
                 )
 
                 expected_a5 = cv2.imread(
                     str(expected_a5_path),
                     cv2.IMREAD_GRAYSCALE,
                 )
-
-                expected_provisional = np.asarray(
-                    expected_provisional,
-                    dtype="<U10",
-                )
-
-                expected_final = np.asarray(
-                    expected_final,
-                    dtype="<U10",
-                )
-
             except Exception as exc:
                 raise A5OperatorError(
                     f"Cannot load expected replay output for "
@@ -929,7 +1106,6 @@ class A5Operator:
         }
 
 
-'''
 def _load_npz_inputs(path: Path) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray | None, np.ndarray | None]:
     if not path.is_file():
         raise A5OperatorError(f"Input NPZ not found: {path}")
@@ -943,62 +1119,6 @@ def _load_npz_inputs(path: Path) -> tuple[dict[str, np.ndarray], np.ndarray, np.
         ys = archive["y"] if "y" in files else None
         xs = archive["x"] if "x" in files else None
     return channels, a1, ys, xs
-'''
-def _load_npz_inputs(
-    path: Path,
-) -> tuple[
-    dict[str, np.ndarray],
-    np.ndarray,
-    np.ndarray | None,
-    np.ndarray | None,
-]:
-    if not path.is_file():
-        raise A5OperatorError(
-            f"Input NPZ not found: {path}"
-        )
-
-    with np.load(
-        path,
-        allow_pickle=False,
-    ) as archive:
-        files = set(archive.files)
-
-        required = (
-            set(DEFAULT_CHANNELS)
-            | {"a1"}
-        )
-
-        missing = required - files
-
-        if missing:
-            raise A5OperatorError(
-                "Input NPZ schema mismatch. "
-                f"Path: {path}; "
-                f"missing: {sorted(missing)}; "
-                f"available: {sorted(files)}"
-            )
-
-        channels = {
-            name: archive[name]
-            for name in DEFAULT_CHANNELS
-        }
-
-        a1 = archive["a1"]
-
-        ys = (
-            archive["y"]
-            if "y" in files
-            else None
-        )
-
-        xs = (
-            archive["x"]
-            if "x" in files
-            else None
-        )
-
-    return channels, a1, ys, xs
-
 
 
 def main(argv: Sequence[str] | None = None) -> int:
