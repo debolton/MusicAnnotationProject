@@ -3,8 +3,7 @@ name: Sync to Hugging Face
 on:
   push:
     branches:
-      - main
-      - project_documents
+      - v0-HF-04.6-beta-01
 
 jobs:
   sync:
