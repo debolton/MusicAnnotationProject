@@ -1,5 +1,5 @@
 ---
-title: Music Annotation HF-04.5
+title: Music Annotation HF-04.6 (BETA version)
 emoji: 🎼
 colorFrom: blue
 colorTo: green

@@ -90,6 +90,20 @@ FINAL_PACKAGE_FILES = (
     "package_manifest.json",
 )
 
+A5_CHANNEL_ORDER = (
+    "obs",
+    "norm",
+    "mask",
+    "depth",
+    "horizontal",
+    "vertical",
+    "compact",
+    "preserve",
+    "remove",
+    "ambiguous",
+    "edge",
+)
+
 
 # ---------------------------------------------------------------------------
 # API models
@@ -155,6 +169,19 @@ def get_correction_operator() -> A5Operator:
             device=get_device(),
             run_startup_replay=True,
         )
+
+        operator_channels = tuple(
+            _correction_operator.bundle.schema[
+                "channels"
+            ]
+        )
+
+        if operator_channels != A5_CHANNEL_ORDER:
+            raise RuntimeError(
+                "Application/frozen A5 channel-order mismatch: "
+                f"application={A5_CHANNEL_ORDER}, "
+                f"bundle={operator_channels}"
+            )
 
     return _correction_operator
 
@@ -1418,16 +1445,12 @@ def authorise(sid: str):
         # written to disk.
         import csv
 
-        channel_order = [
-            "obs", "norm", "mask", "depth", "horizontal",
-            "vertical", "compact", "preserve", "remove",
-            "ambiguous", "edge",
-        ]
+        
         channels = result.get("channels")
         if not isinstance(channels, Mapping):
             raise RuntimeError("A5 result omitted the channel mapping")
         missing_channels = [
-            name for name in channel_order if name not in channels
+            name for name in A5_CHANNEL_ORDER if name not in channels
         ]
         if missing_channels:
             raise RuntimeError(
@@ -1448,7 +1471,7 @@ def authorise(sid: str):
             "provisional": provisional,
             "final": final,
             "yolo_confidence": yolo_confidence,
-            **{name: np.asarray(channels[name]) for name in channel_order},
+            **{name: np.asarray(channels[name]) for name in A5_CHANNEL_ORDER},
         }
         mismatched = {
             name: list(value.shape)
@@ -1536,7 +1559,7 @@ def authorise(sid: str):
         diagnostic_manifest = {
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "page_shape": list(observed.shape),
-            "channel_order": channel_order,
+            "channel_order": A5_CHANNEL_ORDER,
             "patch_size": 33,
             "padding": "reflect",
             "normalisation": {
@@ -2500,7 +2523,7 @@ def finish(
         "a5_channel_diagnostic_csv_exported": True,
 
         "a5_channel_order": (
-            channel_order
+            A5_CHANNEL_ORDER
         ),
 
         "a5_patch_size": 33,
