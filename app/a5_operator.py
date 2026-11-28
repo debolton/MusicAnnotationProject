@@ -9,7 +9,7 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[1]
-A5_V88_BUNDLE = ROOT / "frozen" / "a5_v1"
+A5_V88_BUNDLE = ROOT / "frozen" / "a5_v88"
 
 EXPECTED_CHANNELS = [
     "observed",
