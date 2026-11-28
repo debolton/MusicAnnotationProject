@@ -1,5 +1,5 @@
 ---
-title: Music Annotation HF-04.6 (BETA version)
+title: Music Annotation HF-04.7 (ALPHA version)
 emoji: 🎼
 colorFrom: blue
 colorTo: green
@@ -33,6 +33,8 @@ python apply_startup_evidence_endpoint.py
 ```
 
 Then rebuild the Space and visit `/startup-evidence`.
+
+# HF-04.7 attempting to flip A5 to notebook 88 lineage
 
 # Software License - MIT
 
