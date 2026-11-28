@@ -1,4 +1,4 @@
-name: Sync to Hugging Face
+name: Sync Beta to Hugging Face
 
 on:
   push:
@@ -11,9 +11,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: v0-HF-04.6-beta-01
 
       - uses: huggingface/hub-sync@v0.3.0
         with:
           github_repo_id: ${{ github.repository }}
           huggingface_repo_id: debolton/MusicAnnotationProject
           hf_token: ${{ secrets.HF_TOKEN }}
+          github_branch: v0-HF-04.6-beta-01
