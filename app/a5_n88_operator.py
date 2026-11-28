@@ -232,23 +232,53 @@ def _build_channels(
     edge = (cv2.Canny(observed, 70, 170) > 0).astype(np.float32)
 
     all_channels: Dict[str, Array] = {
+        # 1. observed
         "obs": observed.astype(np.float32) / 255.0,
         "observed": observed.astype(np.float32) / 255.0,
+
+        # 2. local-normalised observed intensity
         "norm": norm,
         "normalised": norm,
         "normalized": norm,
+        "local_normalised": norm,
+        "local_normalized": norm,
+
+        # 3. authoritative reviewed mask
         "mask": mask.astype(np.float32),
+        "reviewed_mask": mask.astype(np.float32),
+        "authoritative_mask": mask.astype(np.float32),
+
+        # 4. mask depth
         "depth": depth,
         "mask_depth": depth,
+
+        # 5. A1 / V7.8 ambiguous route
         "ambiguous": ambiguous.astype(np.float32),
+
+        # 6. annotation probability
         "p_annotation": p_annotation.astype(np.float32),
+
+        # 7. print probability value
         "p_print_value": p_print_value.astype(np.float32),
         "p_print": p_print_value.astype(np.float32),
+
+        # 8. print-probability availability
         "p_print_available": p_print_available.astype(np.float32),
+
+        # 9. observed edge
         "edge": edge,
+
+        # 10. horizontal structural support
         "horizontal": horizontal.astype(np.float32),
+        "horizontal_support": horizontal.astype(np.float32),
+
+        # 11. vertical structural support
         "vertical": vertical.astype(np.float32),
+        "vertical_support": vertical.astype(np.float32),
+
+        # 12. compact structural support
         "compact": compact.astype(np.float32),
+        "compact_support": compact.astype(np.float32),
     }
     missing = [name for name in channel_names if name not in all_channels]
     if missing:

@@ -150,7 +150,7 @@ $('generate').onclick = async () => {
     const formData = new FormData();
     formData.append('file', file);
 
-    status('Running YOLO annotation detector...');
+    status('Running annotation detector...');
 
     try {
         const response = await fetch(
@@ -167,7 +167,7 @@ $('generate').onclick = async () => {
 
         if (!response.ok) {
             status(
-                'YOLO/session creation failed: ' +
+                'Cleanup mask/session creation failed: ' +
                 describeError(
                     data,
                     `HTTP ${response.status}`
@@ -215,13 +215,12 @@ $('generate').onclick = async () => {
         $('review').hidden = false;
 
         status(
-            'Review the authoritative YOLO mask ' +
-            'with ADD / ERASE.'
+            'Review the cleanup mask with ADD / ERASE.'
         );
 
     } catch (error) {
         status(
-            'YOLO/session creation failed: ' +
+            'Cleanup mask/session creation failed: ' +
             error.message
         );
     }
