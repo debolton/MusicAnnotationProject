@@ -9,84 +9,47 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[1]
-A5_V1_BUNDLE = ROOT / "frozen" / "a5_v1"
-
+A5_V88_BUNDLE = ROOT / "frozen" / "a5_v88"
 
 EXPECTED_CHANNELS = [
-    "obs",
-    "norm",
-    "mask",
-    "depth",
-    "horizontal",
-    "vertical",
-    "compact",
-    "preserve",
-    "remove",
+    "observed",
+    "local_normalised",
+    "reviewed_mask",
+    "mask_depth",
     "ambiguous",
+    "p_annotation",
+    "p_print_value",
+    "p_print_available",
     "edge",
+    "horizontal_support",
+    "vertical_support",
+    "compact_support",
 ]
 
 EXPECTED_PATCH_SIZE = 33
-EXPECTED_POLICY_ID = "A5-v1-print-p0980-margin0960-run2"
-
-EXPECTED_POLICY = {
-    "annotation_action": "KEEP_A1_BYTE",
-    "annotation_threshold": 0.995,
-    "clean_image_permitted_at_runtime": False,
-    "connectivity": 8,
-    "development_policy_selected_post_outcome": True,
-    "effective_print_threshold": 0.980,
-    "fallback": "A1",
-    "independent_validation_completed": False,
-    "minimum_print_run": 2,
-    "outside_authoritative_mask": "IMMUTABLE_OBSERVED",
-    "policy_id": EXPECTED_POLICY_ID,
-    "print_action": "COPY_EXACT_OBSERVED_BYTE",
-    "print_margin": 0.960,
-    "print_threshold": 0.980,
-    "production_authorised": False,
-    "raw_page_coordinates_as_model_inputs": False,
-    "runtime_truth_permitted": False,
-    "status": "FROZEN_CANDIDATE_FOR_INDEPENDENT_TEST",
-    "truth_codes": {
-        "0": "ANNOTATION",
-        "1": "PRINT",
-        "2": "UNCERTAIN",
-    },
-    "uncertain_action": "KEEP_A1_BYTE",
-}
+EXPECTED_POLICY_ID = "A5-v88-contextual-safe-cleanup"
 
 ALLOWED_DECISIONS = {
-    "ANNOTATION",
-    "PRINT",
+    "CLEAN",
+    "KEEP",
     "UNCERTAIN",
 }
 
 
 class A5Operator:
     """
-    Frozen A5-v1 observed-print operator.
+    Notebook 88 contextual safe-cleanup operator.
 
-    Candidate population:
-        authoritative mask
-        AND observed byte < 200
-        AND not already PRESERVE-routed by frozen V7.8
+    Eligible population:
+        inside the authoritative reviewed mask
+        AND V7.8 AMBIGUOUS
+        AND not V7.8 PRESERVE-routed
 
-    Input contract:
-        Notebook 87 A1 is supplied by A1Operator.
-        A5 must not construct, replace or modify A1.
-
-    Output contract:
-        PRINT      -> copy the exact observed byte
-        ANNOTATION -> retain the exact Notebook 87 A1 byte
-        UNCERTAIN  -> retain the exact Notebook 87 A1 byte
-
-    Integrity contract:
-        outside authoritative mask -> exact observed byte
-        outside final PRINT mask    -> exact A1 byte
-        every changed byte          -> exact observed byte
-
-    This operator is not a CLEAN-to-paper operator.
+    Assembly:
+        CLEAN      -> exact frozen paper estimate byte
+        KEEP       -> exact Notebook 87 A1 byte
+        UNCERTAIN  -> exact Notebook 87 A1 byte
+        outside authority -> exact observed byte
     """
 
     a5_policy_id = EXPECTED_POLICY_ID
@@ -94,65 +57,64 @@ class A5Operator:
     def __init__(
         self,
         device: str | None = None,
-        bundle_dir: Path | str = A5_V1_BUNDLE,
+        bundle_dir: Path | str = A5_V88_BUNDLE,
         run_startup_replay: bool = True,
     ):
         self.bundle_dir = Path(bundle_dir)
 
         if not self.bundle_dir.is_dir():
             raise RuntimeError(
-                "Missing frozen A5-v1 bundle directory: "
+                "Missing A5-v88 bundle directory: "
                 f"{self.bundle_dir}"
             )
 
-        runtime_path = (
-            self.bundle_dir
-            / "inference_runtime.py"
-        )
-
+        runtime_path = self.bundle_dir / "inference_runtime.py"
         if not runtime_path.is_file():
             raise RuntimeError(
-                "Missing frozen A5-v1 inference runtime: "
+                "Missing A5-v88 inference_runtime.py: "
                 f"{runtime_path}"
             )
 
         spec = importlib.util.spec_from_file_location(
-            "a5_v1_frozen_runtime",
+            "a5_v88_frozen_runtime",
             runtime_path,
         )
-
-        if (
-            spec is None
-            or spec.loader is None
-        ):
+        if spec is None or spec.loader is None:
             raise RuntimeError(
-                "Unable to create module specification for "
-                f"{runtime_path}"
+                "Unable to create module specification "
+                f"for {runtime_path}"
             )
 
-        runtime = importlib.util.module_from_spec(
-            spec
-        )
-
-        spec.loader.exec_module(
-            runtime
-        )
-
+        runtime = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runtime)
         self.rt = runtime
 
-        self._assert_runtime_api()
+        required = [
+            "load_bundle",
+            "make_padded",
+            "score_coordinates",
+            "decisions",
+            "assemble",
+        ]
+        missing = [
+            name
+            for name in required
+            if not callable(getattr(self.rt, name, None))
+        ]
+        if missing:
+            raise RuntimeError(
+                "A5-v88 runtime API is incomplete: "
+                f"{missing}"
+            )
 
         loaded = self.rt.load_bundle(
             self.bundle_dir,
             device=device,
         )
 
-        if (
-            not isinstance(loaded, tuple)
-            or len(loaded) != 5
-        ):
+        if not isinstance(loaded, tuple) or len(loaded) != 5:
             raise RuntimeError(
-                "A5-v1 load_bundle() must return exactly "
+                "A5-v88 load_bundle() must return exactly "
                 "(model, calibrator, policy, schema, device)"
             )
 
@@ -164,306 +126,132 @@ class A5Operator:
             self.device,
         ) = loaded
 
-        self._assert_bundle_contract()
+        self._validate_bundle_contract()
 
         self.bundle_id = str(
             self.policy.get("bundle_id")
-            or self.policy.get(
-                "candidate_lock_id"
-            )
+            or self.policy.get("candidate_lock_id")
             or self.policy["policy_id"]
         )
-
-        self.model_sha256 = self.policy.get(
-            "model_sha256"
-        )
-
+        self.model_sha256 = self.policy.get("model_sha256")
         self.calibrator_sha256 = self.policy.get(
             "calibrator_sha256"
         )
 
         self.startup_replay = None
-
         if run_startup_replay:
-            self.startup_replay = (
-                self._run_startup_replay()
-            )
-
-    # ------------------------------------------------------------------
-    # Frozen bundle validation
-    # ------------------------------------------------------------------
-
-    def _assert_runtime_api(
-        self,
-    ) -> None:
-        required = [
-            "load_bundle",
-            "make_padded",
-            "score_coordinates",
-            "decisions",
-            "assemble",
-        ]
-
-        missing = [
-            name
-            for name in required
-            if not callable(
-                getattr(
-                    self.rt,
-                    name,
-                    None,
+            replay = getattr(self.rt, "run_replay", None)
+            if callable(replay):
+                result = replay(
+                    self.bundle_dir,
+                    self.model,
+                    self.calibrator,
+                    self.policy,
+                    self.schema,
+                    self.device,
                 )
-            )
-        ]
+                if result is False:
+                    raise RuntimeError(
+                        "Frozen A5-v88 startup replay failed"
+                    )
+                if isinstance(result, dict) and result.get(
+                    "passed"
+                ) is False:
+                    raise RuntimeError(
+                        "Frozen A5-v88 startup replay failed"
+                    )
+                self.startup_replay = result
+            else:
+                raise RuntimeError(
+                    "A5-v88 startup replay is mandatory"
+                )
 
-        if missing:
+    def _validate_bundle_contract(self) -> None:
+        if not isinstance(self.policy, dict):
             raise RuntimeError(
-                "Frozen A5-v1 runtime API is incomplete: "
-                f"{missing}"
+                "A5-v88 policy must be a dictionary"
             )
-
-    def _assert_bundle_contract(
-        self,
-    ) -> None:
-        if not isinstance(
-            self.policy,
-            dict,
-        ):
+        if not isinstance(self.schema, dict):
             raise RuntimeError(
-                "Frozen A5-v1 policy must be a dictionary"
-            )
-
-        if not isinstance(
-            self.schema,
-            dict,
-        ):
-            raise RuntimeError(
-                "Frozen A5-v1 schema must be a dictionary"
+                "A5-v88 schema must be a dictionary"
             )
 
-        channels = self.schema.get(
-            "channels"
-        )
-
-        if channels != EXPECTED_CHANNELS:
+        if self.schema.get("channels") != EXPECTED_CHANNELS:
             raise RuntimeError(
-                "A5-v1 channel order differs from the frozen "
-                f"11-channel contract: {channels!r}"
+                "A5-v88 channel order differs from the "
+                "Notebook 88 12-channel contract: "
+                f"{self.schema.get('channels')!r}"
             )
 
         patch = self.schema.get(
             "patch",
-            self.schema.get(
-                "patch_size"
-            ),
+            self.schema.get("patch_size"),
         )
-
-        if int(
-            patch
-            if patch is not None
-            else -1
-        ) != EXPECTED_PATCH_SIZE:
+        if int(patch if patch is not None else -1) != (
+            EXPECTED_PATCH_SIZE
+        ):
             raise RuntimeError(
-                "A5-v1 patch size differs from the frozen "
-                f"{EXPECTED_PATCH_SIZE}x"
-                f"{EXPECTED_PATCH_SIZE} contract: "
-                f"{patch!r}"
+                "A5-v88 patch size differs from "
+                f"{EXPECTED_PATCH_SIZE}x{EXPECTED_PATCH_SIZE}"
             )
 
-        missing = sorted(
-            set(EXPECTED_POLICY)
-            - set(self.policy)
-        )
-
+        required_policy = {
+            "policy_id",
+            "clean_threshold",
+            "minimum_clean_run",
+            "connectivity",
+            "clean_action",
+            "non_clean_action",
+            "outside_authoritative_mask",
+        }
+        missing = sorted(required_policy - set(self.policy))
         if missing:
             raise RuntimeError(
-                "Frozen A5-v1 policy is missing fields: "
+                "A5-v88 policy is missing fields: "
                 f"{missing}"
             )
 
-        for key, expected in (
-            EXPECTED_POLICY.items()
-        ):
-            actual = self.policy[key]
-
-            if isinstance(
-                expected,
-                float,
-            ):
-                try:
-                    actual_number = float(
-                        actual
-                    )
-
-                except (
-                    TypeError,
-                    ValueError,
-                ) as exc:
-                    raise RuntimeError(
-                        "A5-v1 policy field "
-                        f"{key!r} is not numeric: "
-                        f"{actual!r}"
-                    ) from exc
-
-                if actual_number != expected:
-                    raise RuntimeError(
-                        "A5-v1 policy mismatch for "
-                        f"{key}: {actual_number!r} "
-                        f"!= {expected!r}"
-                    )
-
-            elif actual != expected:
-                raise RuntimeError(
-                    "A5-v1 policy mismatch for "
-                    f"{key}: {actual!r} "
-                    f"!= {expected!r}"
-                )
-
-        effective = max(
-            float(
-                self.policy[
-                    "print_threshold"
-                ]
-            ),
-            (
-                1.0
-                + float(
-                    self.policy[
-                        "print_margin"
-                    ]
-                )
-            )
-            / 2.0,
-        )
-
-        if effective != float(
-            self.policy[
-                "effective_print_threshold"
-            ]
+        if str(self.policy["policy_id"]) != (
+            EXPECTED_POLICY_ID
         ):
             raise RuntimeError(
-                "A5-v1 effective PRINT threshold is "
-                "internally inconsistent: calculated "
-                f"{effective!r}, recorded "
-                f"{self.policy['effective_print_threshold']!r}"
+                "Unexpected A5-v88 policy ID"
+            )
+
+        threshold = float(
+            self.policy["clean_threshold"]
+        )
+        if not 0.0 <= threshold <= 1.0:
+            raise RuntimeError(
+                "A5-v88 clean_threshold must be 0..1"
+            )
+        if int(self.policy["minimum_clean_run"]) < 1:
+            raise RuntimeError(
+                "A5-v88 minimum_clean_run must be >= 1"
+            )
+        if int(self.policy["connectivity"]) not in (4, 8):
+            raise RuntimeError(
+                "A5-v88 connectivity must be 4 or 8"
+            )
+        if self.policy["clean_action"] != "COPY_PAPER_BYTE":
+            raise RuntimeError(
+                "A5-v88 clean_action must be COPY_PAPER_BYTE"
+            )
+        if self.policy["non_clean_action"] != "KEEP_A1_BYTE":
+            raise RuntimeError(
+                "A5-v88 non_clean_action must be KEEP_A1_BYTE"
+            )
+        if self.policy[
+            "outside_authoritative_mask"
+        ] != "IMMUTABLE_OBSERVED":
+            raise RuntimeError(
+                "A5-v88 outside-authoritative-mask contract "
+                "must be IMMUTABLE_OBSERVED"
             )
 
         self.a5_policy_id = str(
             self.policy["policy_id"]
         )
-
-    # ------------------------------------------------------------------
-    # Startup replay
-    # ------------------------------------------------------------------
-
-    def _run_startup_replay(
-        self,
-    ) -> Any:
-        """
-        Run the frozen bundle's own replay gate.
-
-        This proves the internal frozen model, calibrator,
-        schema, policy and assembly runtime remain replayable.
-
-        The application-level A1 fallback contract is checked
-        separately by run_from_a1() and main.py.
-        """
-
-        runtime_replay = getattr(
-            self.rt,
-            "run_replay",
-            None,
-        )
-
-        if callable(runtime_replay):
-            replay = runtime_replay(
-                self.bundle_dir,
-                self.model,
-                self.calibrator,
-                self.policy,
-                self.schema,
-                self.device,
-            )
-
-        else:
-            try:
-                from .hf043_replay import (
-                    run_ardross_replay,
-                )
-
-            except ImportError as exc:
-                raise RuntimeError(
-                    "No A5-v1 startup replay is available. "
-                    "Provide runtime.run_replay() or "
-                    "app.hf043_replay."
-                    "run_ardross_replay()."
-                ) from exc
-
-            replay = run_ardross_replay(
-                self
-            )
-
-        if replay is False:
-            raise RuntimeError(
-                "Frozen A5-v1 startup replay failed"
-            )
-
-        if isinstance(
-            replay,
-            dict,
-        ):
-            if replay.get(
-                "passed"
-            ) is False:
-                raise RuntimeError(
-                    "Frozen A5-v1 startup replay failed: "
-                    f"{replay}"
-                )
-
-            replay_policy_id = replay.get(
-                "policy_id"
-            )
-
-            if (
-                replay_policy_id is not None
-                and str(replay_policy_id)
-                != self.a5_policy_id
-            ):
-                raise RuntimeError(
-                    "A5-v1 replay policy mismatch: "
-                    f"{replay_policy_id!r} != "
-                    f"{self.a5_policy_id!r}"
-                )
-
-            zero_checks = [
-                "outside_mask_drift",
-                "outside_authoritative_mask_drift",
-                "non_print_baseline_regression",
-                "non_print_v78_regression",
-                "print_not_equal_observed",
-                "changed_byte_not_equal_observed",
-                "unexpected_changed_byte",
-            ]
-
-            for key in zero_checks:
-                value = replay.get(
-                    key
-                )
-
-                if (
-                    value is not None
-                    and int(value) != 0
-                ):
-                    raise RuntimeError(
-                        "Frozen A5-v1 startup replay "
-                        f"failed {key}: {value}"
-                    )
-
-        return replay
-
-    # ------------------------------------------------------------------
-    # Public page API
-    # ------------------------------------------------------------------
 
     def run_from_a1(
         self,
@@ -473,34 +261,19 @@ class A5Operator:
         page: str | None = None,
         batch: int = 512,
     ) -> dict:
-        """
-        Apply frozen A5-v1 decisions using Notebook 87 A1 as the
-        non-PRINT fallback.
-
-        Operational lineage:
-
-            reviewed authoritative seed
-                -> frozen V7.8 preparation and routing
-                -> frozen V8.9 corrected page
-                -> Notebook 87 A1
-                -> A5-v1
-
-        A5-v1 assembly:
-
-            final PRINT      -> exact observed byte
-            final ANNOTATION -> exact A1 byte
-            final UNCERTAIN  -> exact A1 byte
-            outside mask     -> exact observed byte
-
-        A5 does not construct, replace or modify A1.
-        """
-
         del page
 
-        if not isinstance(
-            a1_result,
-            dict,
-        ):
+        observed = self._require_uint8(
+            observed,
+            "observed page",
+        )
+        seed = self._require_uint8(
+            reviewed_seed,
+            "reviewed authoritative seed",
+            observed.shape,
+        )
+
+        if not isinstance(a1_result, dict):
             raise RuntimeError(
                 "a1_result must be a dictionary"
             )
@@ -523,627 +296,283 @@ class A5Operator:
             "v8_9_corrected",
             "a1",
         }
-
-        missing = sorted(
-            required - set(a1_result)
-        )
-
+        missing = sorted(required - set(a1_result))
         if missing:
             raise RuntimeError(
-                "A1 result omitted fields required "
-                f"by A5-v1: {missing}"
+                "A1 result omitted fields required by "
+                f"A5-v88: {missing}"
             )
 
-        observed_u8 = self._require_uint8_image(
-            observed,
-            "observed page",
-        )
-
-        shape = observed_u8.shape
-
-        seed = self._require_uint8_image(
-            reviewed_seed,
-            "reviewed authoritative seed",
-            shape,
-        )
-
-        a1_observed = self._require_uint8_image(
+        a1_observed = self._require_uint8(
             a1_result["observed"],
             "A1 observed page",
-            shape,
+            observed.shape,
         )
+        if not np.array_equal(a1_observed, observed):
+            raise RuntimeError(
+                "A1 observed page differs from the page "
+                "supplied to A5-v88"
+            )
 
-        a1_seed = self._require_uint8_image(
+        a1_seed = self._require_uint8(
             a1_result["reviewed_seed"],
             "A1 reviewed seed",
-            shape,
+            observed.shape,
         )
-
-        if not np.array_equal(
-            a1_observed,
-            observed_u8,
-        ):
+        if not np.array_equal(a1_seed > 0, seed > 0):
             raise RuntimeError(
-                "A1 observed page differs from the "
-                "page supplied to A5"
+                "A1 reviewed seed differs from the seed "
+                "supplied to A5-v88"
             )
 
-        if not np.array_equal(
-            a1_seed > 0,
-            seed > 0,
-        ):
-            raise RuntimeError(
-                "A1 reviewed seed differs from the "
-                "seed supplied to A5"
-            )
-
-        authority = self._require_bool_mask(
+        authority = self._require_bool(
             a1_result["mask"],
             "authoritative mask",
-            shape,
+            observed.shape,
         )
-
-        telea = self._require_uint8_image(
+        telea = self._require_uint8(
             a1_result["telea"],
             "Telea diagnostic",
-            shape,
+            observed.shape,
         )
-
-        paper = self._require_uint8_image(
+        paper = self._require_uint8(
             a1_result["paper"],
             "paper estimate",
-            shape,
+            observed.shape,
         )
-
-        normalised = self._require_uint8_image(
+        local_normalised = self._require_uint8(
             a1_result["normalised"],
             "background-normalised page",
-            shape,
+            observed.shape,
         )
-
-        geometry_t80 = self._require_uint8_image(
+        preserve = self._require_bool(
+            a1_result["preserve"],
+            "V7.8 PRESERVE route",
+            observed.shape,
+        )
+        remove = self._require_bool(
+            a1_result["remove"],
+            "V7.8 REMOVE route",
+            observed.shape,
+        )
+        ambiguous = self._require_bool(
+            a1_result["ambiguous"],
+            "V7.8 AMBIGUOUS route",
+            observed.shape,
+        )
+        horizontal = self._require_bool(
+            a1_result["horizontal"],
+            "V7.8 horizontal support",
+            observed.shape,
+        )
+        vertical = self._require_bool(
+            a1_result["vertical"],
+            "V7.8 vertical support",
+            observed.shape,
+        )
+        compact = self._require_bool(
+            a1_result["compact"],
+            "V7.8 compact support",
+            observed.shape,
+        )
+        geometry_t80 = self._require_uint8(
             a1_result["geometry_t80"],
-            "frozen V7.8 geometry_t80",
-            shape,
+            "V7.8 geometry_t80",
+            observed.shape,
         )
-
-        v8_9_corrected = self._require_uint8_image(
+        v89 = self._require_uint8(
             a1_result["v8_9_corrected"],
-            "frozen V8.9 corrected page",
-            shape,
+            "V8.9 corrected page",
+            observed.shape,
         )
-
-        a1 = self._require_uint8_image(
+        a1 = self._require_uint8(
             a1_result["a1"],
             "Notebook 87 A1",
-            shape,
+            observed.shape,
         )
 
         routes = a1_result["routes"]
-
-        if not isinstance(
-            routes,
-            dict,
-        ):
+        if not isinstance(routes, dict):
             raise RuntimeError(
                 "a1_result['routes'] must be a dictionary"
             )
-
-        required_routes = {
-            "preserve",
-            "remove",
-            "ambiguous",
-        }
-
-        missing_routes = sorted(
-            required_routes - set(routes)
-        )
-
-        if missing_routes:
-            raise RuntimeError(
-                "A1 result omitted V7.8 routes "
-                f"required by A5-v1: {missing_routes}"
-            )
-
-        preserve = self._require_bool_mask(
-            a1_result["preserve"],
-            "V7.8 PRESERVE route",
-            shape,
-        )
-
-        remove = self._require_bool_mask(
-            a1_result["remove"],
-            "V7.8 REMOVE route",
-            shape,
-        )
-
-        ambiguous = self._require_bool_mask(
-            a1_result["ambiguous"],
-            "V7.8 AMBIGUOUS route",
-            shape,
-        )
-
-        horizontal = self._require_bool_mask(
-            a1_result["horizontal"],
-            "V7.8 horizontal support",
-            shape,
-        )
-
-        vertical = self._require_bool_mask(
-            a1_result["vertical"],
-            "V7.8 vertical support",
-            shape,
-        )
-
-        compact = self._require_bool_mask(
-            a1_result["compact"],
-            "V7.8 compact support",
-            shape,
-        )
-
-        # ----------------------------------------------------------
-        # Direct fields and route-dictionary fields must agree
-        # ----------------------------------------------------------
-
-        for name, direct in (
-            ("preserve", preserve),
-            ("remove", remove),
-            ("ambiguous", ambiguous),
-        ):
-            route_value = self._require_bool_mask(
-                routes[name],
-                f"routes[{name!r}]",
-                shape,
-            )
-
-            if not np.array_equal(
-                direct,
-                route_value,
-            ):
+        for name in ("preserve", "remove", "ambiguous"):
+            if name not in routes:
                 raise RuntimeError(
-                    f"A1 direct {name} array differs from "
-                    f"routes[{name!r}]"
+                    f"a1_result['routes'] omits {name}"
                 )
 
-        # ----------------------------------------------------------
-        # V7.8 route partition
-        # ----------------------------------------------------------
-
-        if np.any(
-            preserve & remove
-        ):
-            raise RuntimeError(
-                "V7.8 PRESERVE and REMOVE routes overlap"
-            )
-
-        if np.any(
-            preserve & ambiguous
-        ):
-            raise RuntimeError(
-                "V7.8 PRESERVE and AMBIGUOUS routes overlap"
-            )
-
-        if np.any(
-            remove & ambiguous
-        ):
-            raise RuntimeError(
-                "V7.8 REMOVE and AMBIGUOUS routes overlap"
-            )
-
-        routed = (
-            preserve
-            | remove
-            | ambiguous
-        )
-
-        if not np.array_equal(
-            routed,
-            authority,
-        ):
-            missing_authority = int(
-                np.sum(
-                    authority
-                    & ~routed
-                )
-            )
-
-            escaped_route = int(
-                np.sum(
-                    routed
-                    & ~authority
-                )
-            )
-
+        routed = preserve | remove | ambiguous
+        if not np.array_equal(routed, authority):
             raise RuntimeError(
                 "V7.8 routes do not exactly partition "
-                "the authoritative mask: "
-                f"missing={missing_authority}, "
-                f"outside={escaped_route}"
+                "the authoritative mask"
             )
-
-        # ----------------------------------------------------------
-        # Stage-boundary integrity
-        # ----------------------------------------------------------
-
-        for name, image in (
-            (
-                "V7.8 geometry_t80",
-                geometry_t80,
-            ),
-            (
-                "V8.9 corrected page",
-                v8_9_corrected,
-            ),
-            (
-                "Notebook 87 A1",
-                a1,
-            ),
-            (
-                "Telea diagnostic",
-                telea,
-            ),
-        ):
-            if np.any(
-                image[~authority]
-                != observed_u8[~authority]
-            ):
-                raise RuntimeError(
-                    f"{name} changed pixels outside "
-                    "the authoritative mask"
-                )
-
-        if np.any(
-            a1[ambiguous]
-            != observed_u8[ambiguous]
-        ):
+        if np.any(preserve & remove):
             raise RuntimeError(
-                "Notebook 87 A1 does not contain the "
-                "exact observed bytes at every "
-                "V7.8 AMBIGUOUS coordinate"
+                "PRESERVE and REMOVE routes overlap"
             )
-
-        if np.any(
-            a1[~ambiguous]
-            != v8_9_corrected[~ambiguous]
-        ):
+        if np.any(preserve & ambiguous):
             raise RuntimeError(
-                "Notebook 87 A1 differs from V8.9 "
-                "outside the V7.8 AMBIGUOUS route"
+                "PRESERVE and AMBIGUOUS routes overlap"
+            )
+        if np.any(remove & ambiguous):
+            raise RuntimeError(
+                "REMOVE and AMBIGUOUS routes overlap"
             )
 
-        actual_a1_delta = (
-            a1 != v8_9_corrected
+        if np.any(a1[~authority] != observed[~authority]):
+            raise RuntimeError(
+                "Notebook 87 A1 changed pixels outside "
+                "the authoritative mask"
+            )
+
+        edge = (
+            cv2.Canny(observed, 70, 170) > 0
         )
-
-        expected_a1_delta = (
-            ambiguous
-            & (
-                observed_u8
-                != v8_9_corrected
-            )
-        )
-
-        if not np.array_equal(
-            actual_a1_delta,
-            expected_a1_delta,
-        ):
-            unexpected = int(
-                np.sum(
-                    actual_a1_delta
-                    & ~expected_a1_delta
-                )
-            )
-
-            missing_effective = int(
-                np.sum(
-                    expected_a1_delta
-                    & ~actual_a1_delta
-                )
-            )
-
-            raise RuntimeError(
-                "Notebook 87 A1 delta from V8.9 does "
-                "not equal effective AMBIGUOUS-to-"
-                "observed restoration: "
-                f"unexpected={unexpected}, "
-                f"missing={missing_effective}"
-            )
-
-        # ----------------------------------------------------------
-        # Construct the frozen A5 11-channel input
-        #
-        # These definitions match the V8.2/A5 channel contract.
-        # No clean or truth-derived input is used.
-        # ----------------------------------------------------------
-
-        depth = cv2.distanceTransform(
+        mask_depth = cv2.distanceTransform(
             authority.astype(np.uint8),
             cv2.DIST_L2,
             5,
         ).astype(np.float32)
 
-        edge = (
-            cv2.Canny(
-                observed_u8,
-                70,
-                170,
-            )
-            > 0
+        p_annotation = np.asarray(
+            a1_result.get("p_annotation"),
+            dtype=np.float32,
+        ) if "p_annotation" in a1_result else np.zeros(
+            observed.shape,
+            dtype=np.float32,
         )
 
+        p_print_value = np.asarray(
+            a1_result.get("p_print_value"),
+            dtype=np.float32,
+        ) if "p_print_value" in a1_result else np.zeros(
+            observed.shape,
+            dtype=np.float32,
+        )
+
+        p_print_available = np.asarray(
+            a1_result.get(
+                "p_print_available",
+                np.zeros(observed.shape, dtype=np.uint8),
+            )
+        ).astype(bool)
+
+        if p_annotation.shape != observed.shape:
+            raise RuntimeError(
+                "p_annotation shape mismatch"
+            )
+        if p_print_value.shape != observed.shape:
+            raise RuntimeError(
+                "p_print_value shape mismatch"
+            )
+        if p_print_available.shape != observed.shape:
+            raise RuntimeError(
+                "p_print_available shape mismatch"
+            )
+
         channels = {
-            "obs": observed_u8,
-            "norm": normalised,
-            "mask": authority,
-            "depth": depth,
-            "horizontal": horizontal,
-            "vertical": vertical,
-            "compact": compact,
-            "preserve": preserve,
-            "remove": remove,
+            "observed": observed,
+            "local_normalised": local_normalised,
+            "reviewed_mask": authority,
+            "mask_depth": mask_depth,
             "ambiguous": ambiguous,
+            "p_annotation": p_annotation,
+            "p_print_value": p_print_value,
+            "p_print_available": p_print_available.astype(
+                np.uint8
+            ),
             "edge": edge,
+            "horizontal_support": horizontal,
+            "vertical_support": vertical,
+            "compact_support": compact,
         }
 
-        if list(
-            channels
-        ) != EXPECTED_CHANNELS:
+        if list(channels) != EXPECTED_CHANNELS:
             raise RuntimeError(
-                "Constructed A5 channel order differs "
-                "from the frozen schema: "
-                f"{list(channels)!r}"
+                "Constructed A5-v88 channel order differs "
+                "from the Notebook 88 contract"
             )
-
-        if list(
-            self.schema["channels"]
-        ) != EXPECTED_CHANNELS:
-            raise RuntimeError(
-                "Loaded A5 schema does not match the "
-                "expected frozen channel order"
-            )
-
-        # ----------------------------------------------------------
-        # Run A5 from the exact supplied A1 fallback
-        # ----------------------------------------------------------
 
         result = self.process_arrays(
             arrays=channels,
             baseline=a1,
+            paper=paper,
             authoritative_mask=authority,
+            ambiguous_mask=ambiguous,
+            preserve_mask=preserve,
             batch=batch,
         )
 
-        a5 = self._require_uint8_image(
+        a5 = self._require_uint8(
             result["corrected"],
-            "A5-v1 corrected page",
-            shape,
+            "A5-v88 corrected page",
+            observed.shape,
+        )
+        clean_mask = self._require_bool(
+            result["clean_mask"],
+            "A5-v88 CLEAN mask",
+            observed.shape,
         )
 
-        eligible_a5_v1 = (
-            self._require_bool_mask(
-                result["eligible"],
-                "A5-v1 eligibility",
-                shape,
-            )
-        )
-
-        print_mask = (
-            self._require_bool_mask(
-                result["print_mask"],
-                "A5-v1 PRINT mask",
-                shape,
-            )
-        )
-
-        p_print = np.asarray(
-            result["probability"]
-        )
-
-        raw_p_print = np.asarray(
-            result["raw_probability"]
-        )
-
-        provisional = np.asarray(
-            result["provisional"]
-        )
-
-        final = np.asarray(
-            result["final"]
-        )
-
-        for name, value in (
-            (
-                "raw_p_print",
-                raw_p_print,
-            ),
-            (
-                "p_print",
-                p_print,
-            ),
-            (
-                "provisional",
-                provisional,
-            ),
-            (
-                "final",
-                final,
-            ),
-        ):
-            if value.shape != shape:
-                raise RuntimeError(
-                    f"{name} shape mismatch: "
-                    f"expected {shape}, "
-                    f"found {value.shape}"
-                )
-
-        # ----------------------------------------------------------
-        # Explicit A1 fallback contract
-        # ----------------------------------------------------------
-
-        if np.any(
-            a5[print_mask]
-            != observed_u8[print_mask]
-        ):
+        if np.any(a5[clean_mask] != paper[clean_mask]):
             raise RuntimeError(
-                "A5-v1 PRINT output does not equal "
-                "the exact observed byte"
+                "A5-v88 CLEAN output does not equal "
+                "the exact paper byte"
             )
-
-        if np.any(
-            a5[~print_mask]
-            != a1[~print_mask]
-        ):
+        if np.any(a5[~clean_mask] != a1[~clean_mask]):
             raise RuntimeError(
-                "A5-v1 non-PRINT output differs from "
-                "Notebook 87 A1"
+                "A5-v88 non-CLEAN output differs "
+                "from Notebook 87 A1"
             )
-
-        if np.any(
-            a5[~authority]
-            != observed_u8[~authority]
-        ):
+        if np.any(a5[~authority] != observed[~authority]):
             raise RuntimeError(
-                "A5-v1 changed pixels outside the "
-                "authoritative mask"
+                "A5-v88 changed pixels outside authority"
             )
-
-        actual_delta_from_a1 = (
-            a5 != a1
-        )
-
-        expected_delta_from_a1 = (
-            print_mask
-            & (
-                observed_u8 != a1
-            )
-        )
-
-        if not np.array_equal(
-            actual_delta_from_a1,
-            expected_delta_from_a1,
-        ):
-            unexpected = int(
-                np.sum(
-                    actual_delta_from_a1
-                    & ~expected_delta_from_a1
-                )
-            )
-
-            missing_effective = int(
-                np.sum(
-                    expected_delta_from_a1
-                    & ~actual_delta_from_a1
-                )
-            )
-
-            raise RuntimeError(
-                "A5-v1 delta from A1 does not equal "
-                "effective PRINT restoration: "
-                f"unexpected={unexpected}, "
-                f"missing={missing_effective}"
-            )
-
-        if np.any(
-            actual_delta_from_a1
-            & (
-                a5 != observed_u8
-            )
-        ):
-            raise RuntimeError(
-                "A5-v1 changed byte does not equal observed"
-            )
-
-        # ----------------------------------------------------------
-        # Return the complete lineage without overwriting A1
-        # ----------------------------------------------------------
 
         return {
             **a1_result,
-
             "mask": authority,
             "telea": telea,
             "paper": paper,
-            "normalised": normalised,
-
+            "normalised": local_normalised,
             "horizontal": horizontal,
             "vertical": vertical,
             "compact": compact,
-
             "preserve": preserve,
             "remove": remove,
             "ambiguous": ambiguous,
-
             "channels": channels,
-            "depth": depth,
+            "depth": mask_depth,
             "edge": edge,
-
             "routes": {
                 **routes,
                 "preserve": preserve,
                 "remove": remove,
                 "ambiguous": ambiguous,
             },
-
             "geometry_t80": geometry_t80,
-            "v8_9_corrected": v8_9_corrected,
-
+            "v8_9_corrected": v89,
             "a1": a1,
             "a5": a5,
-
-            "eligible_a5_v1": eligible_a5_v1,
-
-            "raw_p_print": raw_p_print,
-
-            "p_print": p_print,
-            "provisional": provisional,
-            "final": final,
-            "print_mask": print_mask,
-
+            "eligible_a5_v88": result["eligible"],
+            "p_clean": result["probability"],
+            "raw_p_clean": result["raw_probability"],
+            "provisional": result["provisional"],
+            "final": result["final"],
+            "clean_mask": clean_mask,
+            "a5_clean_mask": clean_mask,
             "a5_ys": result["y"],
             "a5_xs": result["x"],
-
-            "a5_delta_from_a1": (
-                actual_delta_from_a1
-            ),
-
-            "a5_delta_from_v7_8": (
-                a5 != geometry_t80
-            ),
-
-            "a1_policy_id": a1_result.get(
-                "a1_policy_id",
-                "NOTEBOOK87_A1_FROM_FROZEN_V8_9",
-            ),
-
-            "v89_operator_sha256": (
-                a1_result[
-                    "v89_operator_sha256"
-                ]
-            ),
-
-            "a5_policy_id": (
-                self.a5_policy_id
-            ),
-
-            "bundle_id": (
-                self.bundle_id
-            ),
-
-            "model_sha256": (
-                self.model_sha256
-            ),
-
-            "calibrator_sha256": (
-                self.calibrator_sha256
-            ),
-
-            "a5_action": (
-                "COPY_EXACT_OBSERVED_BYTE"
-            ),
-
-            "a5_fallback": (
-                "Notebook87 A1"
-            ),
+            "a5_delta_from_a1": a5 != a1,
+            "a5_delta_from_v7_8": a5 != geometry_t80,
+            "a5_policy_id": self.a5_policy_id,
+            "bundle_id": self.bundle_id,
+            "model_sha256": self.model_sha256,
+            "calibrator_sha256": self.calibrator_sha256,
+            "a5_action": "COPY_PAPER_BYTE",
+            "a5_fallback": "Notebook87 A1",
         }
 
     def run(
@@ -1153,279 +582,152 @@ class A5Operator:
         page: str | None = None,
         batch: int = 512,
     ) -> dict:
-        """
-        Disabled legacy entry point.
-
-        A5 now requires a precomputed Notebook 87 A1 result.
-        """
-
         del observed
         del reviewed_seed
         del page
         del batch
-
         raise RuntimeError(
-            "A5Operator.run() is disabled. "
-            "A5-v1 requires a precomputed Notebook 87 A1 "
-            "result from A1Operator. Call run_from_a1()."
+            "A5-v88.run() is disabled. "
+            "A5-v88 requires a precomputed Notebook 87 "
+            "A1 result. Call run_from_a1()."
         )
-
-    # ------------------------------------------------------------------
-    # Array-level API
-    # ------------------------------------------------------------------
 
     def process_arrays(
         self,
         arrays: dict,
         baseline: np.ndarray,
-        authoritative_mask: np.ndarray | None = None,
+        paper: np.ndarray,
+        authoritative_mask: np.ndarray,
+        ambiguous_mask: np.ndarray,
+        preserve_mask: np.ndarray,
         batch: int = 512,
     ) -> dict:
-        """
-        Score the frozen A5-v1 eligible population and assemble a
-        corrected page from the supplied fallback baseline.
-
-        Operationally the fallback baseline is Notebook 87 A1.
-        This method does not construct, infer or replace A1.
-        """
-
-        if not isinstance(
-            arrays,
-            dict,
-        ):
+        if not isinstance(arrays, dict):
             raise RuntimeError(
-                "A5-v1 arrays must be a dictionary"
+                "A5-v88 arrays must be a dictionary"
             )
-
-        if (
-            not isinstance(batch, int)
-            or batch < 1
-        ):
+        if not isinstance(batch, int) or batch < 1:
             raise ValueError(
                 "batch must be a positive integer"
             )
 
+        observed = self._require_uint8(
+            arrays["observed"],
+            "observed",
+        )
+        baseline = self._require_uint8(
+            baseline,
+            "A5-v88 fallback baseline",
+            observed.shape,
+        )
+        paper = self._require_uint8(
+            paper,
+            "A5-v88 paper estimate",
+            observed.shape,
+        )
+        mask = self._require_bool(
+            authoritative_mask,
+            "authoritative mask",
+            observed.shape,
+        )
+        ambiguous = self._require_bool(
+            ambiguous_mask,
+            "AMBIGUOUS route",
+            observed.shape,
+        )
+        preserve = self._require_bool(
+            preserve_mask,
+            "PRESERVE route",
+            observed.shape,
+        )
+
         required_channels = list(
             self.schema["channels"]
         )
-
         missing = [
-            channel
-            for channel in required_channels
-            if channel not in arrays
+            name
+            for name in required_channels
+            if name not in arrays
         ]
-
         if missing:
             raise RuntimeError(
-                "A5-v1 arrays omit channels: "
+                "A5-v88 arrays omit channels: "
                 f"{missing}"
             )
 
-        observed = self._require_uint8_image(
-            arrays["obs"],
-            "observed",
-        )
-
-        baseline = self._require_uint8_image(
-            baseline,
-            "A5 non-PRINT fallback baseline",
-            observed.shape,
-        )
-
-        schema_mask = self._require_bool_mask(
-            arrays["mask"],
-            "channel mask",
-            observed.shape,
-        )
-
-        if authoritative_mask is None:
-            mask = schema_mask
-
-        else:
-            mask = self._require_bool_mask(
-                authoritative_mask,
-                "authoritative mask",
-                observed.shape,
-            )
-
-            if not np.array_equal(
-                mask,
-                schema_mask,
+        for name in required_channels:
+            array = np.asarray(arrays[name])
+            if array.shape != observed.shape:
+                raise RuntimeError(
+                    f"A5-v88 channel {name} shape mismatch"
+                )
+            if (
+                np.issubdtype(array.dtype, np.number)
+                and not np.isfinite(array).all()
             ):
                 raise RuntimeError(
-                    "Authoritative mask and "
-                    "channel mask differ"
+                    f"A5-v88 channel {name} contains "
+                    "non-finite values"
                 )
 
-        preserve = self._require_bool_mask(
-            arrays["preserve"],
-            "preserve route",
+        schema_mask = self._require_bool(
+            arrays["reviewed_mask"],
+            "schema reviewed_mask",
             observed.shape,
         )
+        if not np.array_equal(schema_mask, mask):
+            raise RuntimeError(
+                "Channel reviewed_mask differs from "
+                "the authoritative mask"
+            )
 
-        remove = self._require_bool_mask(
-            arrays["remove"],
-            "remove route",
-            observed.shape,
-        )
-
-        ambiguous = self._require_bool_mask(
+        schema_ambiguous = self._require_bool(
             arrays["ambiguous"],
-            "ambiguous route",
+            "schema ambiguous",
             observed.shape,
         )
-
-        routed = (
-            preserve
-            | remove
-            | ambiguous
-        )
-
-        if np.any(
-            preserve
-            & remove
-        ):
+        if not np.array_equal(schema_ambiguous, ambiguous):
             raise RuntimeError(
-                "PRESERVE and REMOVE routes overlap"
+                "Channel ambiguous differs from "
+                "the AMBIGUOUS route"
             )
 
-        if np.any(
-            preserve
-            & ambiguous
-        ):
+        if np.any(baseline[~mask] != observed[~mask]):
             raise RuntimeError(
-                "PRESERVE and AMBIGUOUS routes overlap"
+                "A5-v88 fallback baseline has "
+                "outside-mask drift"
             )
-
-        if np.any(
-            remove
-            & ambiguous
-        ):
+        if np.any(paper[~mask] != observed[~mask]):
             raise RuntimeError(
-                "REMOVE and AMBIGUOUS routes overlap"
+                "A5-v88 paper estimate has "
+                "outside-mask drift"
             )
-
-        if not np.array_equal(
-            routed,
-            mask,
-        ):
-            missing_route = int(
-                np.sum(
-                    mask
-                    & ~routed
-                )
-            )
-
-            escaped_route = int(
-                np.sum(
-                    routed
-                    & ~mask
-                )
-            )
-
-            raise RuntimeError(
-                "V7.8 routes do not exactly partition "
-                "the authoritative mask: "
-                f"missing={missing_route}, "
-                f"outside={escaped_route}"
-            )
-
-        if np.any(
-            baseline[~mask]
-            != observed[~mask]
-        ):
-            raise RuntimeError(
-                "A5 fallback baseline has outside-mask drift"
-            )
-
-        # Frozen A5-v1 candidate rule:
-        #
-        #   inside prepared authoritative mask
-        #   AND observed byte below 200
-        #   AND not already PRESERVE-routed by V7.8
 
         eligible = (
             mask
-            & (
-                observed < 200
-            )
+            & ambiguous
             & ~preserve
         )
 
-        expected_eligible = (
-            mask
-            & (
-                observed < 200
-            )
-            & ~preserve
-        )
-
-        if not np.array_equal(
-            eligible,
-            expected_eligible,
-        ):
-            raise RuntimeError(
-                "A5-v1 eligibility does not equal "
-                "the frozen candidate rule"
-            )
-
-        if np.any(
-            eligible
-            & ~mask
-        ):
-            raise RuntimeError(
-                "A5-v1 eligibility escapes the "
-                "authoritative mask"
-            )
-
-        if np.any(
-            eligible
-            & preserve
-        ):
-            raise RuntimeError(
-                "A5-v1 eligibility includes PRESERVE pixels"
-            )
-
-        if np.any(
-            eligible
-            & (
-                observed >= 200
-            )
-        ):
-            raise RuntimeError(
-                "A5-v1 eligibility includes non-dark pixels"
-            )
-
-        y, x = np.where(
-            eligible
-        )
-
-        y = y.astype(
-            np.int64
-        )
-
-        x = x.astype(
-            np.int64
-        )
+        y, x = np.where(eligible)
+        y = y.astype(np.int64)
+        x = x.astype(np.int64)
 
         probability_map = np.full(
             observed.shape,
             np.nan,
             dtype=np.float32,
         )
-
         raw_probability_map = np.full(
             observed.shape,
             np.nan,
             dtype=np.float32,
         )
-
         provisional_map = np.full(
             observed.shape,
             "INELIGIBLE",
             dtype=object,
         )
-
         final_map = np.full(
             observed.shape,
             "INELIGIBLE",
@@ -1433,19 +735,19 @@ class A5Operator:
         )
 
         if len(y) == 0:
-            print_mask = np.zeros(
+            clean_mask = np.zeros(
                 observed.shape,
                 dtype=bool,
             )
-
             corrected = baseline.copy()
 
-            self._assert_output_contract(
+            self._validate_assembly(
                 observed=observed,
                 baseline=baseline,
-                mask=mask,
+                paper=paper,
+                authority=mask,
                 eligible=eligible,
-                print_mask=print_mask,
+                clean_mask=clean_mask,
                 corrected=corrected,
             )
 
@@ -1457,7 +759,7 @@ class A5Operator:
                 "final": final_map,
                 "y": y,
                 "x": x,
-                "print_mask": print_mask,
+                "clean_mask": clean_mask,
                 "corrected": corrected,
             }
 
@@ -1466,31 +768,26 @@ class A5Operator:
             self.schema,
         )
 
-        score_result = (
-            self.rt.score_coordinates(
-                self.model,
-                self.calibrator,
-                padded,
-                self.schema,
-                y,
-                x,
-                self.device,
-                batch=batch,
-                return_raw=True,
-            )
+        score_result = self.rt.score_coordinates(
+            self.model,
+            self.calibrator,
+            padded,
+            self.schema,
+            y,
+            x,
+            self.device,
+            batch=batch,
+            return_raw=True,
         )
 
-        if (
-            not isinstance(
-                score_result,
-                tuple,
-            )
-            or len(
-                score_result
-            ) != 2
-        ):
+        if not isinstance(score_result, tuple):
             raise RuntimeError(
-                "A5-v1 score_coordinates(return_raw=True) "
+                "A5-v88 score_coordinates(return_raw=True) "
+                "must return (calibrated, raw)"
+            )
+        if len(score_result) != 2:
+            raise RuntimeError(
+                "A5-v88 score_coordinates(return_raw=True) "
                 "must return (calibrated, raw)"
             )
 
@@ -1498,188 +795,150 @@ class A5Operator:
             score_result[0],
             dtype=np.float64,
         )
-
         raw_probability = np.asarray(
             score_result[1],
             dtype=np.float64,
         )
-        
-        if raw_probability.shape != (
-            len(y),
-        ):
-            raise RuntimeError(
-                "A5-v1 raw PRINT probability "
-                "shape mismatch: "
-                f"expected {(len(y),)}, "
-                f"found {raw_probability.shape}"
-            )
 
-        if not np.isfinite(
-            raw_probability
-        ).all():
+        if probability.shape != (len(y),):
             raise RuntimeError(
-                "A5-v1 raw PRINT probability "
-                "contains non-finite values"
+                "A5-v88 CLEAN probability shape mismatch"
             )
-
-        if (
-            np.any(
-                raw_probability < 0.0
-            )
-            or np.any(
-                raw_probability > 1.0
-            )
-        ):
+        if raw_probability.shape != (len(y),):
             raise RuntimeError(
-                "A5-v1 raw PRINT probability "
-                "lies outside 0..1"
+                "A5-v88 raw CLEAN probability shape mismatch"
             )
-
-        if probability.shape != (
-            len(y),
-        ):
+        if not np.isfinite(probability).all():
             raise RuntimeError(
-                "A5-v1 PRINT probability shape mismatch: "
-                f"expected {(len(y),)}, "
-                f"found {probability.shape}"
-            )
-
-        if not np.isfinite(
-            probability
-        ).all():
-            raise RuntimeError(
-                "A5-v1 PRINT probability contains "
+                "A5-v88 CLEAN probability contains "
                 "non-finite values"
             )
-
+        if not np.isfinite(raw_probability).all():
+            raise RuntimeError(
+                "A5-v88 raw CLEAN probability contains "
+                "non-finite values"
+            )
         if (
-            np.any(
-                probability < 0.0
-            )
-            or np.any(
-                probability > 1.0
-            )
+            np.any(probability < 0.0)
+            or np.any(probability > 1.0)
+            or np.any(raw_probability < 0.0)
+            or np.any(raw_probability > 1.0)
         ):
             raise RuntimeError(
-                "A5-v1 PRINT probability lies outside 0..1"
+                "A5-v88 probability lies outside 0..1"
             )
 
-        decision_result = (
-            self.rt.decisions(
-                probability,
-                self.policy,
-                observed.shape,
-                y,
-                x,
-            )
-        )
-
-        provisional, final = (
-            self._normalise_decision_result(
-                decision_result=decision_result,
-                probability_count=len(y),
-                image_shape=observed.shape,
-                y=y,
-                x=x,
-            )
-        )
-
-        probability_map[
+        decisions = self.rt.decisions(
+            probability,
+            self.policy,
+            observed.shape,
             y,
             x,
-        ] = probability.astype(
+        )
+
+        if isinstance(decisions, dict):
+            provisional = np.asarray(
+                decisions["provisional"]
+            )
+            final = np.asarray(
+                decisions["final"]
+            )
+        elif isinstance(decisions, tuple):
+            provisional = np.asarray(decisions[0])
+            final = np.asarray(decisions[1])
+        else:
+            raise RuntimeError(
+                "A5-v88 decisions() must return "
+                "(provisional, final)"
+            )
+
+        if provisional.shape != (len(y),):
+            raise RuntimeError(
+                "A5-v88 provisional shape mismatch"
+            )
+        if final.shape != (len(y),):
+            raise RuntimeError(
+                "A5-v88 final shape mismatch"
+            )
+
+        provisional = np.asarray(
+            [
+                str(value).upper()
+                for value in provisional
+            ],
+            dtype=object,
+        )
+        final = np.asarray(
+            [
+                str(value).upper()
+                for value in final
+            ],
+            dtype=object,
+        )
+
+        unexpected = (
+            set(provisional.tolist())
+            | set(final.tolist())
+        ) - ALLOWED_DECISIONS
+        if unexpected:
+            raise RuntimeError(
+                "A5-v88 unexpected classes: "
+                f"{sorted(unexpected)}"
+            )
+
+        probability_map[y, x] = probability.astype(
             np.float32
         )
+        raw_probability_map[y, x] = (
+            raw_probability.astype(np.float32)
+        )
+        provisional_map[y, x] = provisional
+        final_map[y, x] = final
 
-        raw_probability_map[
+        corrected, clean_mask = self.rt.assemble(
+            observed,
+            baseline,
+            paper,
+            mask,
             y,
             x,
-        ] = raw_probability.astype(
-            np.float32
+            final,
         )
 
-        provisional_map[
-            y,
-            x,
-        ] = provisional
-
-        final_map[
-            y,
-            x,
-        ] = final
-
-        corrected, print_mask = (
-            self.rt.assemble(
-                observed,
-                baseline,
-                mask,
-                y,
-                x,
-                final,
-            )
+        corrected = self._require_uint8(
+            corrected,
+            "A5-v88 corrected page",
+            observed.shape,
+        )
+        clean_mask = self._require_bool(
+            clean_mask,
+            "A5-v88 CLEAN mask",
+            observed.shape,
         )
 
-        corrected = (
-            self._require_uint8_image(
-                corrected,
-                "A5-v1 corrected page",
-                observed.shape,
-            )
-        )
-
-        print_mask = (
-            self._require_bool_mask(
-                print_mask,
-                "A5-v1 PRINT mask",
-                observed.shape,
-            )
-        )
-
-        expected_print_mask = np.zeros(
+        selected = final == "CLEAN"
+        expected_clean_mask = np.zeros(
             observed.shape,
             dtype=bool,
         )
-
-        selected = (
-            final == "PRINT"
-        )
-
-        expected_print_mask[
-            y[selected],
-            x[selected],
-        ] = True
+        expected_clean_mask[y[selected], x[selected]] = True
 
         if not np.array_equal(
-            print_mask,
-            expected_print_mask,
+            clean_mask,
+            expected_clean_mask,
         ):
-            missing_print = int(
-                np.sum(
-                    expected_print_mask
-                    & ~print_mask
-                )
-            )
-
-            unexpected_print = int(
-                np.sum(
-                    print_mask
-                    & ~expected_print_mask
-                )
-            )
-
             raise RuntimeError(
-                "Runtime PRINT mask differs from final "
-                "PRINT decisions: "
-                f"missing={missing_print}, "
-                f"unexpected={unexpected_print}"
+                "A5-v88 runtime CLEAN mask differs "
+                "from final CLEAN decisions"
             )
 
-        self._assert_output_contract(
+        self._validate_assembly(
             observed=observed,
             baseline=baseline,
-            mask=mask,
+            paper=paper,
+            authority=mask,
             eligible=eligible,
-            print_mask=print_mask,
+            clean_mask=clean_mask,
             corrected=corrected,
         )
 
@@ -1691,451 +950,111 @@ class A5Operator:
             "final": final_map,
             "y": y,
             "x": x,
-            "print_mask": print_mask,
+            "clean_mask": clean_mask,
             "corrected": corrected,
         }
 
-    # ------------------------------------------------------------------
-    # Decision validation
-    # ------------------------------------------------------------------
-
-    def _normalise_decision_result(
-        self,
-        decision_result: Any,
-        probability_count: int,
-        image_shape: tuple[int, int],
-        y: np.ndarray,
-        x: np.ndarray,
-    ) -> tuple[
-        np.ndarray,
-        np.ndarray,
-    ]:
-        if isinstance(
-            decision_result,
-            dict,
-        ):
-            if (
-                "provisional"
-                not in decision_result
-                or "final"
-                not in decision_result
-            ):
-                raise RuntimeError(
-                    "A5-v1 decisions() dictionary must "
-                    "contain 'provisional' and 'final'"
-                )
-
-            provisional = (
-                decision_result[
-                    "provisional"
-                ]
-            )
-
-            final = (
-                decision_result[
-                    "final"
-                ]
-            )
-
-        elif (
-            isinstance(
-                decision_result,
-                tuple,
-            )
-            and len(
-                decision_result
-            ) == 2
-        ):
-            provisional, final = (
-                decision_result
-            )
-
-        else:
-            raise RuntimeError(
-                "A5-v1 decisions() must return either "
-                "(provisional, final) or a dictionary"
-            )
-
-        provisional = np.asarray(
-            provisional
-        )
-
-        final = np.asarray(
-            final
-        )
-
-        if provisional.shape == image_shape:
-            provisional = provisional[
-                y,
-                x,
-            ]
-
-        if final.shape == image_shape:
-            final = final[
-                y,
-                x,
-            ]
-
-        if provisional.shape != (
-            probability_count,
-        ):
-            raise RuntimeError(
-                "A5-v1 provisional-decision "
-                "shape mismatch: "
-                f"{provisional.shape}"
-            )
-
-        if final.shape != (
-            probability_count,
-        ):
-            raise RuntimeError(
-                "A5-v1 final-decision shape mismatch: "
-                f"{final.shape}"
-            )
-
-        provisional = (
-            self._normalise_classes(
-                provisional,
-                "provisional",
-            )
-        )
-
-        final = self._normalise_classes(
-            final,
-            "final",
-        )
-
-        # The page-global run filter may demote PRINT to
-        # UNCERTAIN, but it must never manufacture PRINT.
-
-        if np.any(
-            (
-                final == "PRINT"
-            )
-            & (
-                provisional != "PRINT"
-            )
-        ):
-            raise RuntimeError(
-                "A5-v1 run filtering created a new "
-                "PRINT decision"
-            )
-
-        # ANNOTATION is a final high-confidence class and must
-        # not be altered by the PRINT run-length filter.
-
-        if np.any(
-            (
-                provisional
-                == "ANNOTATION"
-            )
-            & (
-                final
-                != "ANNOTATION"
-            )
-        ):
-            raise RuntimeError(
-                "A5-v1 run filtering altered an "
-                "ANNOTATION decision"
-            )
-
-        return (
-            provisional,
-            final,
-        )
-
-    def _normalise_classes(
-        self,
-        values: np.ndarray,
-        name: str,
-    ) -> np.ndarray:
-        values = np.asarray(
-            values
-        )
-
-        truth_codes = self.policy.get(
-            "truth_codes",
-            {},
-        )
-
-        if (
-            truth_codes
-            and np.issubdtype(
-                values.dtype,
-                np.number,
-            )
-        ):
-            mapping = {
-                int(key): str(
-                    value
-                ).upper()
-                for key, value
-                in truth_codes.items()
-            }
-
-            if not np.isfinite(
-                values
-            ).all():
-                raise RuntimeError(
-                    f"{name} decisions contain "
-                    "non-finite numeric codes"
-                )
-
-            integer_values = (
-                values.astype(
-                    np.int64
-                )
-            )
-
-            unknown = sorted(
-                set(
-                    integer_values.tolist()
-                )
-                - set(mapping)
-            )
-
-            if unknown:
-                raise RuntimeError(
-                    f"{name} decisions contain unknown "
-                    f"numeric codes: {unknown}"
-                )
-
-            normalised = np.asarray(
-                [
-                    mapping[int(value)]
-                    for value
-                    in integer_values
-                ],
-                dtype=object,
-            )
-
-        else:
-            normalised = np.char.upper(
-                values.astype(
-                    str
-                )
-            ).astype(
-                object
-            )
-
-        unexpected = sorted(
-            set(
-                normalised.tolist()
-            )
-            - ALLOWED_DECISIONS
-        )
-
-        if unexpected:
-            raise RuntimeError(
-                f"{name} decisions contain unexpected "
-                f"A5-v1 classes: {unexpected}"
-            )
-
-        return normalised
-
-    # ------------------------------------------------------------------
-    # Whole-page integrity checks
-    # ------------------------------------------------------------------
-
     @staticmethod
-    def _assert_output_contract(
+    def _validate_assembly(
         observed: np.ndarray,
         baseline: np.ndarray,
-        mask: np.ndarray,
+        paper: np.ndarray,
+        authority: np.ndarray,
         eligible: np.ndarray,
-        print_mask: np.ndarray,
+        clean_mask: np.ndarray,
         corrected: np.ndarray,
     ) -> None:
-        if np.any(
-            print_mask
-            & ~eligible
-        ):
+        if np.any(clean_mask & ~eligible):
             raise RuntimeError(
-                "A5-v1 PRINT decision escapes "
-                "the eligible population"
+                "A5-v88 CLEAN escapes eligible population"
+            )
+        if np.any(clean_mask & ~authority):
+            raise RuntimeError(
+                "A5-v88 CLEAN escapes authoritative mask"
+            )
+        if np.any(corrected[~authority] != observed[~authority]):
+            raise RuntimeError(
+                "A5-v88 outside-authority drift"
+            )
+        if np.any(corrected[clean_mask] != paper[clean_mask]):
+            raise RuntimeError(
+                "A5-v88 CLEAN byte does not equal paper byte"
+            )
+        if np.any(corrected[~clean_mask] != baseline[~clean_mask]):
+            raise RuntimeError(
+                "A5-v88 non-CLEAN byte differs from A1"
             )
 
-        if np.any(
-            print_mask
-            & ~mask
-        ):
-            raise RuntimeError(
-                "A5-v1 PRINT decision escapes "
-                "the authoritative mask"
-            )
-
-        if np.any(
-            corrected[~mask]
-            != observed[~mask]
-        ):
-            raise RuntimeError(
-                "A5-v1 outside-authoritative-mask drift"
-            )
-
-        if np.any(
-            corrected[~print_mask]
-            != baseline[~print_mask]
-        ):
-            raise RuntimeError(
-                "A5-v1 non-PRINT fallback regression"
-            )
-
-        if np.any(
-            corrected[print_mask]
-            != observed[print_mask]
-        ):
-            raise RuntimeError(
-                "A5-v1 PRINT output does not equal "
-                "the exact observed byte"
-            )
-
-        changed = (
-            corrected != baseline
-        )
-
+        changed = corrected != baseline
         expected_changed = (
-            print_mask
-            & (
-                observed != baseline
-            )
+            clean_mask
+            & (paper != baseline)
         )
-
-        if not np.array_equal(
-            changed,
-            expected_changed,
-        ):
-            unexpected = int(
-                np.sum(
-                    changed
-                    & ~expected_changed
-                )
-            )
-
-            missing = int(
-                np.sum(
-                    expected_changed
-                    & ~changed
-                )
-            )
-
+        if not np.array_equal(changed, expected_changed):
             raise RuntimeError(
-                "A5-v1 page delta does not equal "
-                "effective PRINT restoration: "
-                f"unexpected={unexpected}, "
-                f"missing={missing}"
+                "A5-v88 page delta is not exactly "
+                "effective CLEAN restoration"
             )
-
-        if np.any(
-            changed
-            & (
-                corrected != observed
-            )
-        ):
-            raise RuntimeError(
-                "A5-v1 changed byte does not equal observed"
-            )
-
-    # ------------------------------------------------------------------
-    # Input helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
-    def _require_uint8_image(
+    def _require_uint8(
         value: np.ndarray,
         name: str,
         expected_shape: tuple[int, int] | None = None,
     ) -> np.ndarray:
-        value = np.asarray(
-            value
-        )
-
+        value = np.asarray(value)
         if value.ndim != 2:
             raise RuntimeError(
-                f"{name} must be two-dimensional; "
-                f"found shape {value.shape}"
+                f"{name} must be two-dimensional"
             )
-
         if (
             expected_shape is not None
-            and value.shape
-            != expected_shape
+            and value.shape != expected_shape
         ):
             raise RuntimeError(
-                f"{name} shape mismatch: "
-                f"expected {expected_shape}, "
-                f"found {value.shape}"
+                f"{name} shape mismatch"
             )
-
-        if not np.issubdtype(
-            value.dtype,
-            np.number,
-        ):
+        if not np.issubdtype(value.dtype, np.number):
             raise RuntimeError(
                 f"{name} must contain numeric values"
             )
-
-        if not np.isfinite(
-            value
-        ).all():
+        if not np.isfinite(value).all():
             raise RuntimeError(
                 f"{name} contains non-finite values"
             )
-
-        if (
-            value.size
-            and (
-                value.min() < 0
-                or value.max() > 255
-            )
+        if value.size and (
+            value.min() < 0
+            or value.max() > 255
         ):
             raise RuntimeError(
                 f"{name} contains values outside 0..255"
             )
-
         return np.ascontiguousarray(
-            value.astype(
-                np.uint8
-            )
+            value.astype(np.uint8)
         )
 
     @staticmethod
-    def _require_bool_mask(
+    def _require_bool(
         value: np.ndarray,
         name: str,
         expected_shape: tuple[int, int],
     ) -> np.ndarray:
-        value = np.asarray(
-            value
-        )
-
+        value = np.asarray(value)
         if value.ndim != 2:
             raise RuntimeError(
-                f"{name} must be two-dimensional; "
-                f"found shape {value.shape}"
+                f"{name} must be two-dimensional"
             )
-
         if value.shape != expected_shape:
             raise RuntimeError(
-                f"{name} shape mismatch: "
-                f"expected {expected_shape}, "
-                f"found {value.shape}"
+                f"{name} shape mismatch"
             )
-
         if (
-            np.issubdtype(
-                value.dtype,
-                np.number,
-            )
-            and not np.isfinite(
-                value
-            ).all()
+            np.issubdtype(value.dtype, np.number)
+            and not np.isfinite(value).all()
         ):
             raise RuntimeError(
                 f"{name} contains non-finite values"
             )
-
         return np.ascontiguousarray(
-            value.astype(
-                bool
-            )
+            value.astype(bool)
         )
